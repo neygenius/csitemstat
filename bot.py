@@ -7,22 +7,51 @@ from telegram.ext import Application, CommandHandler, MessageHandler, ContextTyp
 logging.basicConfig(level=logging.INFO)
 
 # Токен
-TOKEN = os.getenv("BOT_TOKEN")
+TOKEN = None
 
 # Обработчик команды /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Привет! Я бот, который помогает отслеживать цены на ваши CS2 предметы")
+    """
+    Обработчик команды /start. Отправляет приветственное сообщение пользователю
+    """
+    try:
+        await update.message.reply_text("Привет! Я бот, который помогает отслеживать цены на ваши CS2 предметы")
+    except Exception as e:
+        logging.error(f"Ошибка при отправке сообщения: {e}")
 
 # Обработчик команды /help
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Здесь должна быть вспомогательная информация")
+    """
+    Обработчик команды /help. Отправляет вспомогательную информацию пользователю
+    """
+    try:
+        await update.message.reply_text("Здесь должна быть вспомогательная информация")
+    except Exception as e:
+        logging.error(f"Ошибка при отправке сообщения: {e}")
 
 # Обработчик текстовых сообщений
 async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Обработчик текстовых сообщений. Отправляет обратно то, что написал пользователь
+    """
     text = update.message.text
-    await update.message.reply_text(f"Ваше сообщение: {text}")
+    if text is None:
+        try:
+            await update.message.reply_text("Я понимаю только текст")
+        except Exception as e:
+            logging.error(f"Ошибка при отправке сообщения: {e}")
+    else:
+        try:
+            await update.message.reply_text(f"Твое сообщение: {text}")
+        except Exception as e:
+            logging.error(f"Ошибка при отправке сообщения: {e}")
 
 def main():
+    global TOKEN
+    TOKEN = os.getenv("BOT_TOKEN")
+    if not TOKEN:
+        raise ValueError("BOT_TOKEN not set in environment")
+
     # Создаём приложение
     app = Application.builder().token(TOKEN).build()
 
