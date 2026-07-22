@@ -55,7 +55,7 @@ jobs:
 
     - name: Set up environment variables
       run: |
-        echo "BOT_TOKEN=test_token" >> $GITHUB_ENV
+        echo "BOT_TOKEN=123:abc" >> $GITHUB_ENV
         echo "WEBHOOK_SECRET=test_secret" >> $GITHUB_ENV
         echo "WEBHOOK_URL=https://example.com" >> $GITHUB_ENV
         echo "DB_USER=test_user" >> $GITHUB_ENV
