@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     STEAM_COOKIES: str = ""
     FERNET_KEY: str
     APP_ID: int = 730
+    CURRENCY_SYMBOL: str = "₽"
 
     @property
     def DATABASE_URL(self) -> str:

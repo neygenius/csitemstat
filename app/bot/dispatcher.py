@@ -238,8 +238,8 @@ async def cmd_stats(message: types.Message):
         trend = snapshot.trend_direction or "—"
         text = (
             f"📊 <b>{item.market_hash_name}</b>\n"
-            f"Мин. цена: ${float(snapshot.lowest_price):.2f}\n"
-            f"Медиана: ${float(snapshot.median_price):.2f}\n"
+            f"Мин. цена: {float(snapshot.lowest_price):.2f} {settings.CURRENCY_SYMBOL}\n"
+            f"Медиана: {float(snapshot.median_price):.2f} {settings.CURRENCY_SYMBOL}\n"
             f"Объём (24ч): {snapshot.volume_24h}\n"
             f"Тренд (7д): {trend}"
         )

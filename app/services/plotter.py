@@ -1,5 +1,6 @@
 import io
 import matplotlib
+from app.config import settings
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
@@ -12,7 +13,7 @@ def generate_price_chart(dates: List[datetime], prices: List[float], item_name: 
     ax.plot(dates, prices, marker='.', linestyle='-', color='#1f77b4')
     ax.set_title(f"Price history: {item_name}")
     ax.set_xlabel("Date")
-    ax.set_ylabel("Price (USD)")
+    ax.set_ylabel(f"Price ({settings.CURRENCY_SYMBOL})")
     ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
     fig.autofmt_xdate()
     ax.grid(True, linestyle='--', alpha=0.7)

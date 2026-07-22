@@ -4,9 +4,10 @@ from typing import List
 from datetime import date, timedelta
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.config import settings
 from app.db.models import PriceAlert, ItemSnapshot, ItemDailyStats, Subscription, User, Item
 from app.services.statistics import percent_change
-from app.bot.messages import send_telegram_message  # заглушка
+from app.bot.messages import send_telegram_message
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +49,7 @@ async def check_price_alerts(session: AsyncSession, bot_token: str):
                     f"⚠️ Ценовой алерт\n"
                     f"{item_name} (ID: {alert.item_id})\n"
                     f"Цена изменилась на {direction} {abs(change):.1f}% за {alert.period}\n"
-                    f"Текущая: ${float(snapshot.median_price):.2f}"
+                    f"Текущая: {float(snapshot.median_price):.2f} {settings.CURRENCY_SYMBOL}"
                 )
                 await send_telegram_message(bot_token, user.chat_id, text)
                 alert.last_triggered_at = datetime.now(timezone.utc)  # фиксируем UTC
@@ -96,7 +97,7 @@ async def send_digests(session: AsyncSession, bot_token: str, frequency: str):
         text = (
             f"📊 {'Ежедневный' if frequency == 'daily' else 'Еженедельный'} дайджест\n"
             f"Предмет: {item_name}\n"
-            f"Текущая цена: ${float(snapshot.median_price):.2f}\n"
+            f"Текущая цена: {float(snapshot.median_price):.2f} {settings.CURRENCY_SYMBOL}\n"
             f"Изменение {period_text}: {change_str}\n"
             f"Тренд: {snapshot.trend_direction}"
         )

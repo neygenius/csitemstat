@@ -1,5 +1,6 @@
 import logging
 from datetime import date, datetime, timezone
+import re
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import Item, ItemDailyStats, ItemSnapshot, UserTrackedItem
@@ -25,9 +26,9 @@ async def update_snapshots(session: AsyncSession, steam_client: SteamClient, app
                 logger.warning(f"No price data for {item.market_hash_name}")
                 continue
 
-            lowest_price = float(data.get("lowest_price", "0").replace("$", "").replace(",", ""))
-            median_price = float(data.get("median_price", "0").replace("$", "").replace(",", ""))
-            volume = int(data.get("volume", "0").replace(",", ""))
+            lowest_price = parse_steam_price(data.get("lowest_price", "0"))
+            median_price = parse_steam_price(data.get("median_price", "0"))
+            volume = int(re.sub(r'[^\d]', '', data.get("volume", "0")))
 
             # Обновляем или создаем снапшот
             snapshot = await session.get(ItemSnapshot, item.id)
@@ -103,3 +104,22 @@ async def sync_daily_history(session: AsyncSession, steam_client: SteamClient, a
             logger.error(f"History sync error for {item.market_hash_name}: {e}")
     await session.commit()
     logger.info("History synced")
+
+def parse_steam_price(price_str: str) -> float:
+    """Извлекает числовое значение из строки цены Steam (любая валюта)."""
+    # Удаляем всё, кроме цифр, точки и запятой
+    clean = re.sub(r'[^\d.,]', '', price_str)
+    if not clean:
+        return 0.0
+    # Если есть запятая и нет точки — запятая десятичный разделитель
+    if ',' in clean and '.' not in clean:
+        clean = clean.replace(',', '.')
+    # Если есть и точка, и запятая — смотрим, что идёт последним (дробная часть)
+    elif ',' in clean and '.' in clean:
+        if clean.rfind('.') > clean.rfind(','):
+            # точка — дробный разделитель, запятые — тысячи
+            clean = clean.replace(',', '')
+        else:
+            # запятая — дробный разделитель, точки — тысячи
+            clean = clean.replace('.', '').replace(',', '.')
+    return float(clean)
