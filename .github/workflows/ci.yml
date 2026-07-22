@@ -64,9 +64,11 @@ jobs:
         echo "DB_NAME=test_db" >> $GITHUB_ENV
         echo "REDIS_URL=redis://localhost:6379/0" >> $GITHUB_ENV
         echo "STEAM_COOKIES=" >> $GITHUB_ENV
-        echo "FERNET_KEY=test_key" >> $GITHUB_ENV
+        # Генерируем валидный Fernet ключ
+        FERNET_KEY=$(python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())")
+        echo "FERNET_KEY=$FERNET_KEY" >> $GITHUB_ENV
         echo "APP_ID=730" >> $GITHUB_ENV
 
-    - name: Run tests with pytest
+    - name: Run tests
       run: |
         PYTHONPATH=. pytest -v
