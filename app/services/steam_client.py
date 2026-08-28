@@ -35,10 +35,14 @@ class SteamClient:
         self.rate_limiter = RateLimiter(20)  # 20 запросов в минуту
         self.client = httpx.AsyncClient(timeout=30.0)
 
-    async def _request(self, url: str, params: dict = None) -> dict:
+    async def _request(self, url: str, params: dict = None, use_cookies: bool = True) -> dict:
         await self.rate_limiter.acquire()
-        headers = {}
-        if self.cookies:
+        headers = {
+            "Accept": "application/json",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "X-Requested-With": "XMLHttpRequest",
+        }
+        if use_cookies and self.cookies:
             headers["Cookie"] = self.cookies
         for attempt in range(3):
             try:
@@ -49,7 +53,11 @@ class SteamClient:
                     await asyncio.sleep(retry_after)
                     continue
                 response.raise_for_status()
-                return response.json()
+                try:
+                    return response.json()
+                except ValueError:
+                    logger.error(f"Response is not JSON: {response.text[:200]}")
+                    return {}
             except httpx.HTTPStatusError as e:
                 logger.error(f"HTTP error {e.response.status_code} for {url}")
                 raise
@@ -64,7 +72,7 @@ class SteamClient:
         url = "https://steamcommunity.com/market/priceoverview/"
         params = {
             "appid": app_id,
-            "currency": 1,  # USD
+            "currency": 1,
             "market_hash_name": market_hash_name
         }
         data = await self._request(url, params)
@@ -81,7 +89,7 @@ class SteamClient:
 
     async def get_inventory(self, steam_id64: int, app_id: int) -> dict:
         # Используем эндпоинт из правок
-        url = f"https://steamcommunity.com/id/{steam_id64}/inventory/json/{app_id}/2"
+        url = f"https://steamcommunity.com/profiles/{steam_id64}/inventory/json/{app_id}/2"
         data = await self._request(url)
         return data
 

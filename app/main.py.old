@@ -1,14 +1,17 @@
+import asyncio
 import logging
-import redis.asyncio as redis
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request
+
+from fastapi import FastAPI
+import redis.asyncio as redis
+
 from app.config import settings
 from app.scheduler.jobs import init_scheduler, shutdown_scheduler
 from app.bot.dispatcher import dp, bot, redis_client
-from aiogram.types import Update
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -16,29 +19,32 @@ async def lifespan(app: FastAPI):
     r = redis.from_url(settings.REDIS_URL, encoding="utf-8", decode_responses=True)
     redis_client = r
     app.state.redis = r
-    logger.info("Redis connected")
+
+    # Запуск планировщика (сбор цен, алерты, дайджесты)
     await init_scheduler(r)
-    webhook_url = f"{settings.WEBHOOK_URL}/webhook"
-    await bot.set_webhook(webhook_url, secret_token=settings.WEBHOOK_SECRET)
-    logger.info(f"Webhook set to {webhook_url}")
+
+    # Удаляем вебхук на случай, если он был установлен ранее
+    await bot.delete_webhook(drop_pending_updates=True)
+    # Запускаем поллинг в фоновой задаче, чтобы не блокировать uvicorn
+    polling_task = asyncio.create_task(dp.start_polling(bot))
+    logger.info("Bot polling started")
+
     yield
-    await bot.delete_webhook()
+
+    # Завершение: останавливаем поллинг и закрываем соединения
+    polling_task.cancel()
+    try:
+        await polling_task
+    except asyncio.CancelledError:
+        pass
     await shutdown_scheduler()
     await r.close()
     await bot.session.close()
+    logger.info("Application stopped")
+
 
 app = FastAPI(lifespan=lifespan)
 
-@app.post("/webhook")
-async def telegram_webhook(request: Request):
-    # Проверяем секретный токен
-    secret = request.headers.get("X-Telegram-Bot-Api-Secret-Token")
-    if secret != settings.WEBHOOK_SECRET:
-        return {"error": "Forbidden"}, 403
-    data = await request.json()
-    update = Update(**data)
-    await dp.feed_update(bot, update)
-    return {"status": "ok"}
 
 @app.get("/health")
 async def health():
