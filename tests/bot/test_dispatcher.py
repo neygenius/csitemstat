@@ -65,7 +65,7 @@ async def test_link_steam_flow(session, mock_bot):
         mock_bot.session.assert_called()
         call_args = mock_bot.session.call_args
         assert call_args[0][1].chat_id == user_id
-        assert "Steam ID64" in call_args[0][1].text
+        assert "Неверный формат: SteamID64" in call_args[0][1].text
 
         # Шаг 2: ввод steam id
         msg2 = make_message(user_id, "76561198000000000")
@@ -128,5 +128,5 @@ async def test_track_item(session, mock_bot):
     # Проверяем, что сообщение отправлено
     mock_bot.session.assert_called()
     call_args = mock_bot.session.call_args
-    assert "добавлен в отслеживание" in call_args[0][1].text
+    assert "добавлен в портфель" in call_args[0][1].text
     await mock_bot.session.close()
