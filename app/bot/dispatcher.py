@@ -364,7 +364,7 @@ async def cmd_stats(message: types.Message):
             dates = [datetime.combine(r.date, datetime.min.time()) for r in records]
             prices = [float(r.price) for r in records]
             img_bytes = generate_price_chart(dates, prices, item.market_hash_name)
-            await send_photo(settings.BOT_TOKEN, message.chat.id, img_bytes)
+            await send_photo(settings.BOT_TOKEN, message.chat.id, img_bytes, caption=item.market_hash_name)
 
 
 # переиспользование логики команды /stats с точным названием предмета

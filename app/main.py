@@ -17,11 +17,15 @@ async def lifespan(app: FastAPI):
     bot_module.redis_client = r   # устанавливаем глобальную переменную в dispatcher
     app.state.redis = r
     logger.info("Redis connected")
-    # await init_scheduler(r)
+
+    await init_scheduler(r)
+    
     webhook_url = f"{settings.WEBHOOK_URL}/webhook"
     await bot_module.bot.set_webhook(webhook_url, secret_token=settings.WEBHOOK_SECRET)
     logger.info(f"Webhook set to {webhook_url}")
+
     yield
+
     await bot_module.bot.delete_webhook()
     await shutdown_scheduler()
     await r.close()

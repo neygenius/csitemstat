@@ -1,7 +1,6 @@
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date, timedelta
 from typing import List
-from datetime import date, timedelta
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
@@ -12,7 +11,7 @@ from app.bot.messages import send_telegram_message
 logger = logging.getLogger(__name__)
 
 async def check_price_alerts(session: AsyncSession, bot_token: str):
-    """Проверяет все активные алерты и отправляет уведомления."""
+    """Проверяет все активные алерты и отправляет уведомления"""
     stmt = select(PriceAlert).where(PriceAlert.active == True)
     result = await session.execute(stmt)
     alerts = result.scalars().all()
@@ -25,7 +24,7 @@ async def check_price_alerts(session: AsyncSession, bot_token: str):
         # Определяем старую цену в зависимости от периода
         if alert.period == '24h':
             old_price = snapshot.price_24h_ago
-        else:  # 7d
+        else:
             seven_days_ago = date.today() - timedelta(days=7)
             stmt_hist = select(ItemDailyStats.price).where(
                 ItemDailyStats.item_id == alert.item_id,
@@ -39,7 +38,10 @@ async def check_price_alerts(session: AsyncSession, bot_token: str):
 
         change = percent_change(float(snapshot.median_price), float(old_price))
         if abs(change) >= float(alert.percent_change):
-            # Получаем имя предмета отдельным запросом, избегая ленивой загрузки
+            # Проверяем cooldown (1 час)
+            if alert.last_triggered_at and (datetime.now(timezone.utc) - alert.last_triggered_at) < timedelta(hours=1):
+                continue
+
             item = await session.get(Item, alert.item_id)
             item_name = item.name if item else f"ID {alert.item_id}"
             user = await session.get(User, alert.user_id)
@@ -52,12 +54,12 @@ async def check_price_alerts(session: AsyncSession, bot_token: str):
                     f"Текущая: {float(snapshot.median_price):.2f} {settings.CURRENCY_SYMBOL}"
                 )
                 await send_telegram_message(bot_token, user.chat_id, text)
-                alert.last_triggered_at = datetime.now(timezone.utc)  # фиксируем UTC
+                alert.last_triggered_at = datetime.now(timezone.utc)
                 session.add(alert)
     await session.commit()
 
 async def send_digests(session: AsyncSession, bot_token: str, frequency: str):
-    """Рассылает дайджесты с заданной периодичностью (daily/weekly)."""
+    """Рассылает дайджесты с заданной периодичностью (daily/weekly)"""
     stmt = select(Subscription).where(
         Subscription.active == True,
         Subscription.frequency == frequency
@@ -90,7 +92,6 @@ async def send_digests(session: AsyncSession, bot_token: str, frequency: str):
             direction = "↑" if change > 0 else ("↓" if change < 0 else "→")
             change_str = f"{direction} {abs(change):.1f}%"
 
-        # Имя предмета загружаем через отдельный объект, чтобы не тянуть отношение лениво
         item = await session.get(Item, sub.item_id)
         item_name = item.market_hash_name if item else "Неизвестный предмет"
 
@@ -104,6 +105,6 @@ async def send_digests(session: AsyncSession, bot_token: str, frequency: str):
         user = await session.get(User, sub.user_id)
         if user:
             await send_telegram_message(bot_token, user.chat_id, text)
-            sub.last_sent_at = datetime.now(timezone.utc)  # UTC
+            sub.last_sent_at = datetime.now(timezone.utc)
             session.add(sub)
     await session.commit()

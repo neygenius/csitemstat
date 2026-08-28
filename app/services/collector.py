@@ -1,5 +1,6 @@
 import logging
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timezone, timedelta
+from dateutil import parser as date_parser
 import re
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,7 +10,7 @@ from app.services.steam_client import SteamClient
 logger = logging.getLogger(__name__)
 
 async def update_snapshots(session: AsyncSession, steam_client: SteamClient, app_id: int):
-    """Обновляет снапшоты всех отслеживаемых предметов."""
+    """Обновляет снапшоты всех отслеживаемых предметов"""
     # Получаем все предметы, у которых есть трекеры или is_tracked
     stmt = select(Item).where(
         (Item.is_tracked == True) | 
@@ -41,15 +42,15 @@ async def update_snapshots(session: AsyncSession, steam_client: SteamClient, app
                 snapshot.price_24h_ago = snapshot.median_price
             elif not snapshot.price_24h_ago:
                 # Попытка взять из истории за предыдущий день
-                yesterday = date.today() - date.resolution
-                stmt_hist = select(ItemDailyStats).where(
+                yesterday = date.today() - timedelta(days=1)
+                stmt_hist = select(ItemDailyStats.price).where(
                     ItemDailyStats.item_id == item.id,
                     ItemDailyStats.date == yesterday
                 )
                 hist_result = await session.execute(stmt_hist)
-                hist_entry = hist_result.scalar_one_or_none()
-                if hist_entry:
-                    snapshot.price_24h_ago = hist_entry.price
+                old_price = hist_result.scalar_one_or_none()
+                if old_price is not None:
+                    snapshot.price_24h_ago = float(old_price)
 
             snapshot.lowest_price = lowest_price
             snapshot.median_price = median_price
@@ -78,7 +79,7 @@ async def update_snapshots(session: AsyncSession, steam_client: SteamClient, app
     logger.info("Snapshots updated")
 
 async def sync_daily_history(session: AsyncSession, steam_client: SteamClient, app_id: int):
-    """Добирает историю для всех отслеживаемых предметов."""
+    """Добирает историю для всех отслеживаемых предметов"""
     stmt = select(Item).where(Item.is_tracked == True)
     result = await session.execute(stmt)
     items = result.scalars().all()
@@ -87,11 +88,18 @@ async def sync_daily_history(session: AsyncSession, steam_client: SteamClient, a
         try:
             prices = await steam_client.get_price_history(app_id, item.market_hash_name)
             for entry in prices:
-                # entry format: ["Jul 16 2026 01: +0", 12.345, "123"]
-                date_str, price, volume = entry[0], entry[1], int(entry[2])
-                # парсим дату (формат зависит от локали, упрощенно)
-                dt = datetime.strptime(date_str[:11], "%b %d %Y").date()
-                # проверяем, есть ли уже
+                # entry format: ["May 27 2015 01: +0", 338.982, "228789"]
+                date_part = entry[0].split()[:3]  # ["May", "27", "2015"]
+                date_str = " ".join(date_part)
+                try:
+                    dt = date_parser.parse(date_str).date()
+                except (ValueError, TypeError) as e:
+                    logger.error(f"Не удалось распарсить дату: {entry[0]} ({e})")
+                    continue
+
+                price = entry[1]
+                volume = int(entry[2])
+
                 stmt_ex = select(ItemDailyStats).where(
                     ItemDailyStats.item_id == item.id,
                     ItemDailyStats.date == dt
@@ -106,7 +114,7 @@ async def sync_daily_history(session: AsyncSession, steam_client: SteamClient, a
     logger.info("History synced")
 
 def parse_steam_price(price_str: str) -> float:
-    """Извлекает числовое значение из строки цены Steam (любая валюта)."""
+    """Извлекает числовое значение из строки цены Steam (любая валюта)"""
     # Удаляем всё, кроме цифр, точки и запятой
     clean = re.sub(r'[^\d.,]', '', price_str)
     if not clean:

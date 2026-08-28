@@ -1,4 +1,4 @@
-from sqlalchemy import Column, BigInteger, Integer, Text, Numeric, Boolean, TIMESTAMP, Date, ForeignKey, UniqueConstraint
+from sqlalchemy import Column, BigInteger, Integer, Text, Numeric, Boolean, TIMESTAMP, Date, ForeignKey, UniqueConstraint, Index
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import BYTEA
 from app.db.base import Base
@@ -33,8 +33,11 @@ class Item(Base):
 
 class UserTrackedItem(Base):
     __tablename__ = "user_tracked_items"
-    user_id = Column(BigInteger, ForeignKey("users.id"), primary_key=True)
-    item_id = Column(Integer, ForeignKey("items.id"), primary_key=True)
+    __table_args__ = (
+        Index('idx_user_tracked_items_user_id', 'user_id'),
+    )
+    user_id = Column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    item_id = Column(Integer, ForeignKey("items.id", ondelete="CASCADE"), primary_key=True)
     added_at = Column(TIMESTAMP(timezone=True), default=lambda: datetime.datetime.now(datetime.timezone.utc))
 
     user = relationship("User", back_populates="tracked_items")
@@ -42,7 +45,10 @@ class UserTrackedItem(Base):
 
 class ItemDailyStats(Base):
     __tablename__ = "item_daily_stats"
-    item_id = Column(Integer, ForeignKey("items.id"), primary_key=True)
+    __table_args__ = (
+        Index('idx_item_daily_stats_item_date', 'item_id', 'date'),
+    )
+    item_id = Column(Integer, ForeignKey("items.id", ondelete="CASCADE"), primary_key=True)
     date = Column(Date, primary_key=True)
     price = Column(Numeric(10,2), nullable=False)
     volume = Column(Integer, nullable=False)
@@ -51,7 +57,10 @@ class ItemDailyStats(Base):
 
 class ItemSnapshot(Base):
     __tablename__ = "item_snapshot"
-    item_id = Column(Integer, ForeignKey("items.id"), primary_key=True)
+    __table_args__ = (
+        Index('idx_item_snapshot_updated_at', 'updated_at'),
+    )
+    item_id = Column(Integer, ForeignKey("items.id", ondelete="CASCADE"), primary_key=True)
     lowest_price = Column(Numeric(10,2), nullable=True)
     median_price = Column(Numeric(10,2), nullable=True)
     volume_24h = Column(Integer, nullable=True)
@@ -65,9 +74,9 @@ class ItemSnapshot(Base):
 class Subscription(Base):
     __tablename__ = "subscriptions"
     id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(BigInteger, ForeignKey("users.id"), nullable=False)
-    item_id = Column(Integer, ForeignKey("items.id"), nullable=False)
-    frequency = Column(Text, nullable=False)  # daily, weekly
+    user_id = Column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    item_id = Column(Integer, ForeignKey("items.id", ondelete="CASCADE"), nullable=False)
+    frequency = Column(Text, nullable=False)
     active = Column(Boolean, default=True)
     last_sent_at = Column(TIMESTAMP(timezone=True), nullable=True)
     created_at = Column(TIMESTAMP(timezone=True), default=lambda: datetime.datetime.now(datetime.timezone.utc))
@@ -79,8 +88,8 @@ class Subscription(Base):
 class PriceAlert(Base):
     __tablename__ = "price_alerts"
     id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(BigInteger, ForeignKey("users.id"), nullable=False)
-    item_id = Column(Integer, ForeignKey("items.id"), nullable=False)
+    user_id = Column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    item_id = Column(Integer, ForeignKey("items.id", ondelete="CASCADE"), nullable=False)
     percent_change = Column(Numeric(5,2), nullable=False)
     period = Column(Text, nullable=False)
     active = Column(Boolean, default=True)
