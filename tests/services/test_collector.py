@@ -16,7 +16,7 @@ async def test_update_snapshots(session, steam_client_mock):
     await session.commit()
 
     # Настраиваем мок SteamClient
-    steam_client_mock.get_price_overview.return_value = {
+    steam_client_mock._provider.get_price_overview.return_value = {
         "success": True,
         "lowest_price": "$5.00",
         "median_price": "$6.50",
@@ -47,7 +47,7 @@ async def test_sync_daily_history(session, steam_client_mock):
     await session.commit()
 
     # Возвращаем массив точек истории
-    steam_client_mock.get_price_history.return_value = [
+    steam_client_mock._provider.get_price_history.return_value = [
         ["Jul 20 2026 01: +0", 10.0, "123"],
         ["Jul 21 2026 01: +0", 11.0, "150"]
     ]

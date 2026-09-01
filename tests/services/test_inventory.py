@@ -4,7 +4,7 @@ from app.services.inventory import fetch_grouped_inventory, group_inventory
 @pytest.mark.asyncio
 async def test_fetch_grouped_inventory(steam_client_mock):
     # Мок-ответ инвентаря
-    steam_client_mock.get_inventory.return_value = {
+    steam_client_mock._provider.get_inventory.return_value = {
         "success": True,
         "rgInventory": {
             "1": {"classid": "111", "instanceid": "222"},
