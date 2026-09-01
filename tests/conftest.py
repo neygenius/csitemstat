@@ -7,6 +7,7 @@ from app.db.base import Base
 from app.config import settings
 from unittest.mock import AsyncMock, patch
 from app.db.models import User, Item, UserTrackedItem, ItemDailyStats, ItemSnapshot, Subscription, PriceAlert
+from app.services.steam.interface import ISteamProvider
 
 TEST_DATABASE_URL = f"postgresql+asyncpg://test_user:test_pass@{settings.DB_HOST}:5432/test_db"
 
@@ -44,3 +45,27 @@ def steam_client_mock():
         client_instance = AsyncMock()
         mock.return_value = client_instance
         yield client_instance
+
+
+class MockSteamProvider(ISteamProvider):
+    async def initialize(self):
+        pass
+    async def ensure_authenticated(self):
+        return True
+    async def get_price_overview(self, app_id, market_hash_name):
+        return {"success": True, "lowest_price": "$1.23", "median_price": "$2.34", "volume": "100"}
+    async def get_price_history(self, app_id, market_hash_name):
+        return [["Jan 01 2026", 1.23, "100"]]
+    async def get_inventory(self, steam_id64, app_id):
+        return {"success": True, "rgInventory": {}, "rgDescriptions": {}}
+    async def close(self):
+        pass
+
+@pytest.fixture
+def steam_provider_mock():
+    return MockSteamProvider()
+
+@pytest.fixture
+def steam_client(steam_provider_mock):
+    from app.services.steam_client import SteamClient
+    return SteamClient(steam_provider_mock)

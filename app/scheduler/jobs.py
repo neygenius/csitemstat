@@ -1,22 +1,16 @@
-import asyncio
 import logging
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.base import async_session
 from app.services.steam_client import SteamClient
 from app.services.collector import update_snapshots, sync_daily_history
 from app.services.notifier import check_price_alerts, send_digests
 from app.config import settings
+import app.state as state
 
 logger = logging.getLogger(__name__)
 
-steam_client: SteamClient = None
-redis = None
-
-async def init_scheduler(redis_client):
-    global steam_client, redis
-    redis = redis_client
-    steam_client = SteamClient()
-    from apscheduler.schedulers.asyncio import AsyncIOScheduler
+async def init_scheduler(redis_client, steam_client: SteamClient):
     scheduler = AsyncIOScheduler()
 
     async def update_snapshots_job():
@@ -48,6 +42,7 @@ async def init_scheduler(redis_client):
     scheduler.start()
     logger.info("Scheduler started")
 
+
 async def shutdown_scheduler():
-    if steam_client:
-        await steam_client.close()
+    # Здесь можно остановить scheduler, если он глобальный
+    pass

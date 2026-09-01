@@ -11,6 +11,7 @@ from app.services.steam_client import SteamClient
 from app.services.inventory import fetch_grouped_inventory, group_inventory
 from app.services.statistics import compute_trend, percent_change
 from app.services.plotter import generate_price_chart
+from app.services.collector import update_single_item_snapshot
 from app.bot.messages import send_telegram_message, send_photo
 from app.services.crypto import encrypt_steam_id, decrypt_steam_id
 from app.bot.keyboards import inventory_pagination, item_actions, subscription_choice, portfolio_pagination, tracked_item_actions, alert_period_keyboard
@@ -18,6 +19,7 @@ from sqlalchemy import select, func
 from datetime import date, timedelta, datetime, timezone
 import redis.asyncio as redis
 import json
+import app.state as state
 
 logger = logging.getLogger(__name__)
 
@@ -122,11 +124,11 @@ async def cmd_inventory(message: types.Message):
             return
 
     # Если нет в кэше
-    steam_client = SteamClient()
+    steam_client = state.steam_client
     try:
         raw = await fetch_grouped_inventory(steam_client, steam_id, settings.APP_ID)
     except Exception as e:
-        logger.error(f"Inventory fetch error: {e}")
+        logger.error(f"Inventory fetch error: {e}", exc_info=True)
         await message.answer("Не удалось загрузить инвентарь. Попробуйте позже")
         await steam_client.close()
         return
@@ -310,13 +312,16 @@ async def cb_tracked_item(callback: types.CallbackQuery):
 
 
 @dp.message(Command("stats"))
-async def cmd_stats(message: types.Message):
-    args = message.text.split(maxsplit=1)
-    if len(args) < 2:
-        await message.answer("Использование: /stats <название предмета>")
-        return
+async def cmd_stats(message: types.Message, item_name: str | None = None):
+    if item_name:
+        name = item_name
+    else:
+        args = message.text.split(maxsplit=1)
+        if len(args) < 2:
+            await message.answer("Использование: /stats <название предмета>")
+            return
+        name = args[1].strip()
     
-    name = args[1].strip()
     async for session in get_db():
         stmt = select(Item).where(Item.market_hash_name.ilike(f"%{name}%"),
                                   Item.app_id == settings.APP_ID).limit(8)
@@ -338,8 +343,19 @@ async def cmd_stats(message: types.Message):
         item = items[0]
         snapshot = await session.get(ItemSnapshot, item.id)
         if not snapshot:
-            await message.answer("Нет данных. Попробуйте позже")
-            return
+            # Мгновенный сбор данных
+            await bot.send_message(message.chat.id, "⏳ Собираю актуальные данные...")
+            steam_client = state.steam_client
+            if steam_client:
+                success = await update_single_item_snapshot(session, steam_client, item)
+                if success:
+                    snapshot = await session.get(ItemSnapshot, item.id)
+                else:
+                    await bot.send_message(message.chat.id, "Не удалось получить данные. Попробуйте позже.")
+                    return
+            else:
+                await bot.send_message(message.chat.id, "Сервис сбора данных недоступен.")
+                return
         
         # Базовое summary
         trend = snapshot.trend_direction or "—"
