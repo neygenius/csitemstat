@@ -63,6 +63,11 @@ jobs:
         echo "DB_HOST=localhost" >> $GITHUB_ENV
         echo "DB_NAME=test_db" >> $GITHUB_ENV
         echo "REDIS_URL=redis://localhost:6379/0" >> $GITHUB_ENV
+        echo "STEAM_USERNAME=test_user" >> $GITHUB_ENV
+        echo "STEAM_PASSWORD=test_pass" >> $GITHUB_ENV
+        echo "STEAM_GUARD_FILE=/home/guard.maFile" >> $GITHUB_ENV
+        echo "STEAM_AUTH_MODE=aiosteampy" >> $GITHUB_ENV
+        echo "STEAM_SESSION_TTL=604800" >> $GITHUB_ENV
         echo "STEAM_COOKIES=" >> $GITHUB_ENV
         # Генерируем валидный Fernet ключ
         FERNET_KEY=$(python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())")
