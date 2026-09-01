@@ -39,13 +39,6 @@ def redis_mock():
         mock_redis.return_value = AsyncMock()
         yield mock_redis
 
-@pytest.fixture
-def steam_client_mock():
-    with patch("app.services.steam_client.SteamClient") as mock:
-        client_instance = AsyncMock()
-        mock.return_value = client_instance
-        yield client_instance
-
 
 class MockSteamProvider(ISteamProvider):
     async def initialize(self):
@@ -66,6 +59,6 @@ def steam_provider_mock():
     return MockSteamProvider()
 
 @pytest.fixture
-def steam_client(steam_provider_mock):
+def steam_client_mock(steam_provider_mock):
     from app.services.steam_client import SteamClient
     return SteamClient(steam_provider_mock)
