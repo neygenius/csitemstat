@@ -40,23 +40,27 @@ def redis_mock():
         yield mock_redis
 
 
-class MockSteamProvider(ISteamProvider):
-    async def initialize(self):
-        pass
-    async def ensure_authenticated(self):
-        return True
-    async def get_price_overview(self, app_id, market_hash_name):
-        return {"success": True, "lowest_price": "$1.23", "median_price": "$2.34", "volume": "100"}
-    async def get_price_history(self, app_id, market_hash_name):
-        return [["Jan 01 2026", 1.23, "100"]]
-    async def get_inventory(self, steam_id64, app_id):
-        return {"success": True, "rgInventory": {}, "rgDescriptions": {}}
-    async def close(self):
-        pass
-
 @pytest.fixture
 def steam_provider_mock():
-    return MockSteamProvider()
+    mock = AsyncMock(spec=ISteamProvider)
+    mock.initialize.return_value = None
+    mock.ensure_authenticated.return_value = True
+    mock.get_price_overview.return_value = {
+        "success": True,
+        "lowest_price": "$1.23",
+        "median_price": "$2.34",
+        "volume": "100"
+    }
+    mock.get_price_history.return_value = [
+        ["Jan 01 2026", 1.23, "100"]
+    ]
+    mock.get_inventory.return_value = {
+        "success": True,
+        "rgInventory": {},
+        "rgDescriptions": {}
+    }
+    mock.close.return_value = None
+    return mock
 
 @pytest.fixture
 def steam_client_mock(steam_provider_mock):

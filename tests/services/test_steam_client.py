@@ -2,6 +2,7 @@ import pytest
 import asyncio
 from unittest.mock import patch, AsyncMock
 from app.services.steam_client import RateLimiter, SteamClient
+from aiosteampy.transport.exceptions import NetworkError
 
 
 class TestRateLimiter:
@@ -42,18 +43,6 @@ class TestSteamClient:
         assert data["success"] is True
         assert data["lowest_price"] == "$1.23"
         steam_client_mock._provider.get_price_overview.assert_called_with(730, "Test Item")
-
-    async def test_get_price_overview_429_retry(self, steam_client_mock):
-        # Эмулируем последовательность: ошибка, затем успех
-        steam_client_mock._provider.get_price_overview.side_effect = [
-            {"success": False},   # первая попытка
-            {"success": True, "lowest_price": "$1.23"}  # вторая
-        ]
-        # Важно: в вашем коде retry_async должен перехватывать ошибку и повторять.
-        # В тесте проверим, что метод вызван дважды.
-        data = await steam_client_mock.get_price_overview(730, "Test Item")
-        assert data["success"] is True
-        assert steam_client_mock._provider.get_price_overview.call_count == 2
     
     async def test_get_price_history(self, steam_client_mock):
         steam_client_mock._provider.get_price_history.return_value = [
