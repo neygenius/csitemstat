@@ -1,8 +1,11 @@
+import datetime
+
 from sqlalchemy import Column, BigInteger, Integer, Text, Numeric, Boolean, TIMESTAMP, Date, ForeignKey, UniqueConstraint, Index
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import BYTEA
+
 from app.db.base import Base
-import datetime
+
 
 class User(Base):
     __tablename__ = "users"
@@ -14,6 +17,7 @@ class User(Base):
     tracked_items = relationship("UserTrackedItem", back_populates="user")
     subscriptions = relationship("Subscription", back_populates="user")
     price_alerts = relationship("PriceAlert", back_populates="user")
+
 
 class Item(Base):
     __tablename__ = "items"
@@ -27,9 +31,11 @@ class Item(Base):
 
     tracked_by = relationship("UserTrackedItem", back_populates="item")
     daily_stats = relationship("ItemDailyStats", back_populates="item")
+    hourly_stats = relationship("ItemHourlyStats", back_populates="item")
     snapshot = relationship("ItemSnapshot", back_populates="item", uselist=False)
     subscriptions = relationship("Subscription", back_populates="item")
     price_alerts = relationship("PriceAlert", back_populates="item")
+
 
 class UserTrackedItem(Base):
     __tablename__ = "user_tracked_items"
@@ -43,6 +49,7 @@ class UserTrackedItem(Base):
     user = relationship("User", back_populates="tracked_items")
     item = relationship("Item", back_populates="tracked_by")
 
+
 class ItemDailyStats(Base):
     __tablename__ = "item_daily_stats"
     __table_args__ = (
@@ -54,6 +61,21 @@ class ItemDailyStats(Base):
     volume = Column(Integer, nullable=False)
 
     item = relationship("Item", back_populates="daily_stats")
+
+
+class ItemHourlyStats(Base):
+    __tablename__ = "item_hourly_stats"
+    __table_args__ = (
+            Index('idx_hourly_item_timestamp', 'item_id', 'timestamp'),
+        )
+    
+    item_id = Column(Integer, ForeignKey("items.id", ondelete="CASCADE"), primary_key=True)
+    timestamp = Column(TIMESTAMP(timezone=True), primary_key=True)
+    price = Column(Numeric(10,2), nullable=False)
+    volume = Column(Integer, nullable=False)
+
+    item = relationship("Item", back_populates="hourly_stats")
+
 
 class ItemSnapshot(Base):
     __tablename__ = "item_snapshot"
@@ -71,6 +93,7 @@ class ItemSnapshot(Base):
 
     item = relationship("Item", back_populates="snapshot")
 
+
 class Subscription(Base):
     __tablename__ = "subscriptions"
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -84,6 +107,7 @@ class Subscription(Base):
 
     user = relationship("User", back_populates="subscriptions")
     item = relationship("Item", back_populates="subscriptions")
+
 
 class PriceAlert(Base):
     __tablename__ = "price_alerts"

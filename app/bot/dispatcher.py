@@ -1,32 +1,37 @@
+import json
 import logging
+from datetime import date, timedelta, datetime, timezone
+
+from sqlalchemy import select
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, BufferedInputFile
+
+import app.state as state
 from app.config import settings
 from app.db.base import async_session
-from app.db.models import User, Item, UserTrackedItem, Subscription, PriceAlert, ItemDailyStats, ItemSnapshot
-from app.services.steam_client import SteamClient
-from app.services.inventory import fetch_grouped_inventory, group_inventory
-from app.services.statistics import compute_trend, percent_change
-from app.services.plotter import generate_price_chart
+from app.db.models import (User, Item, UserTrackedItem, Subscription, 
+                           PriceAlert, ItemDailyStats, ItemHourlyStats, ItemSnapshot)
 from app.services.collector import update_single_item_snapshot
-from app.bot.messages import send_telegram_message, send_photo
 from app.services.crypto import encrypt_steam_id, decrypt_steam_id
-from app.bot.keyboards import inventory_pagination, item_actions, subscription_choice, portfolio_pagination, tracked_item_actions, alert_period_keyboard
-from sqlalchemy import select, func
-from datetime import date, timedelta, datetime, timezone
-import redis.asyncio as redis
-import json
-import app.state as state
+from app.services.inventory import fetch_grouped_inventory
+from app.services.plotter import generate_price_chart
+from app.services.statistics import percent_change
+from app.bot.keyboards import (inventory_pagination, item_actions, 
+                               subscription_choice, portfolio_pagination, 
+                               tracked_item_actions, alert_period_keyboard, price_period_keyboard)
+
 
 logger = logging.getLogger(__name__)
 
 bot = Bot(token=settings.BOT_TOKEN)
 dp = Dispatcher()
 
-# Состояния для FSM
+redis_client = None
+
+
 class LinkSteam(StatesGroup):
     waiting_for_steam_id = State()
 
@@ -34,10 +39,7 @@ class AlertForm(StatesGroup):
     waiting_for_percent = State()
     waiting_for_period = State()
 
-# Redis клиент инициализируется в lifespan
-redis_client = None
 
-# Вспомогательная функция получения сессии
 async def get_db():
     async with async_session() as session:
         yield session
@@ -372,15 +374,8 @@ async def cmd_stats(message: types.Message, item_name: str | None = None):
             text += f"\nИзменения за сутки: {'↑' if change>0 else '↓' if change<0 else '→'} {abs(change):.1f}%"
         await message.answer(text, reply_markup=item_actions(item.id))
 
-        # Отправляем график (если есть история)
-        stmt_hist = select(ItemDailyStats).where(ItemDailyStats.item_id == item.id).order_by(ItemDailyStats.date.asc()).limit(90)
-        hist_res = await session.execute(stmt_hist)
-        records = hist_res.scalars().all()
-        if records:
-            dates = [datetime.combine(r.date, datetime.min.time()) for r in records]
-            prices = [float(r.price) for r in records]
-            img_bytes = generate_price_chart(dates, prices, item.market_hash_name)
-            await send_photo(settings.BOT_TOKEN, message.chat.id, img_bytes, caption=item.market_hash_name)
+        await send_price_chart(message.chat.id, item.id, days=30)
+        return
 
 
 # переиспользование логики команды /stats с точным названием предмета
@@ -392,6 +387,62 @@ async def cb_stats(callback: types.CallbackQuery):
         if item:
             await cmd_stats(callback.message, item.market_hash_name)
     await callback.answer()
+
+
+@dp.callback_query(F.data.startswith("price_period:"))
+async def cb_price_period(callback: types.CallbackQuery):
+    _, item_id_str, period_str = callback.data.split(":")
+    item_id = int(item_id_str)
+    days = None if period_str == "all" else int(period_str)
+
+    await callback.answer()
+    await send_price_chart(callback.message.chat.id, item_id, days=days)
+
+
+async def send_price_chart(chat_id: int, item_id: int, days: int | None = 30):
+    """
+    Отправляет график цены за указанный период с кнопками выбора.
+    """
+    async for session in get_db():
+        item = await session.get(Item, item_id)
+        if not item:
+            return
+
+        if days is not None and days <= 30:
+            cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+            stmt = select(ItemHourlyStats).where(
+                ItemHourlyStats.item_id == item_id,
+                ItemHourlyStats.timestamp >= cutoff
+            ).order_by(ItemHourlyStats.timestamp.asc())
+            records = (await session.execute(stmt)).scalars().all()
+            dates = [r.timestamp for r in records]
+            prices = [float(r.price) for r in records]
+        else:
+            stmt = select(ItemDailyStats).where(ItemDailyStats.item_id == item_id)
+            if days:
+                cutoff_date = date.today() - timedelta(days=days)
+                stmt = stmt.where(ItemDailyStats.date >= cutoff_date)
+            stmt = stmt.order_by(ItemDailyStats.date.asc())
+            records = (await session.execute(stmt)).scalars().all()
+            dates = [datetime.combine(r.date, datetime.min.time()) for r in records]
+            prices = [float(r.price) for r in records]
+
+        if not records:
+            return
+
+        img_bytes = generate_price_chart(dates, prices, item.market_hash_name)
+
+        try:
+            await bot.send_photo(
+                chat_id,
+                photo=BufferedInputFile(img_bytes, filename="chart.png"),
+                caption=item.market_hash_name,
+                reply_markup=price_period_keyboard(item.id),
+            )
+        except Exception as e:
+            logger.error(f"Failed to send price chart for item {item.market_hash_name}: {e}", exc_info=True)
+
+        return
 
 
 @dp.callback_query(F.data.startswith("sub_add:"))

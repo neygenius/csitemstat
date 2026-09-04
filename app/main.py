@@ -1,30 +1,31 @@
 import logging
-import redis.asyncio as redis
 from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Request
-from app.config import settings
-from app.scheduler.jobs import init_scheduler, shutdown_scheduler
-from aiogram.types import Update
-import app.bot.dispatcher as bot_module
-from app.utils.retry import retry_forever, retry_async
-from aiogram.types import WebhookInfo
+import redis.asyncio as redis
+from aiogram.types import Update, WebhookInfo
 from aiogram.exceptions import TelegramNetworkError
-from app.services.steam.factory import create_steam_provider
-from app.services.steam_client import SteamClient
+
 import app.state as state
+from app.config import settings
+import app.bot.dispatcher as bot_module
+from app.services.steam_client import SteamClient
+from app.services.steam.factory import create_steam_provider
+from app.scheduler.jobs import init_scheduler, shutdown_scheduler
+from app.utils.retry import retry_forever, retry_async
+
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Инициализация Redis
     r = redis.from_url(settings.REDIS_URL, encoding="utf-8", decode_responses=True)
     bot_module.redis_client = r
     app.state.redis = r
     logger.info("Redis connected")
 
-    # Инициализация Steam-провайдера и клиента
     provider = create_steam_provider(r)
     await provider.initialize()
     steam_client = SteamClient(provider)
@@ -87,6 +88,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
+
 @app.post("/webhook")
 async def telegram_webhook(request: Request):
     secret = request.headers.get("X-Telegram-Bot-Api-Secret-Token")
@@ -100,6 +102,7 @@ async def telegram_webhook(request: Request):
         logger.exception(f"Webhook processing failed: {e}")
         # Возвращаем 200 OK, чтобы Telegram не считал запрос неудачным и не спамил
     return {"status": "ok"}
+
 
 @app.get("/health")
 async def health():

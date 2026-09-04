@@ -1,14 +1,17 @@
 import logging
+
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy.ext.asyncio import AsyncSession
+
+import app.state as state
+from app.config import settings
 from app.db.base import async_session
-from app.services.steam_client import SteamClient
 from app.services.collector import update_snapshots, sync_daily_history
 from app.services.notifier import check_price_alerts, send_digests
-from app.config import settings
-import app.state as state
+from app.services.steam_client import SteamClient
 
 logger = logging.getLogger(__name__)
+
 
 async def init_scheduler(redis_client, steam_client: SteamClient):
     scheduler = AsyncIOScheduler()
@@ -44,5 +47,5 @@ async def init_scheduler(redis_client, steam_client: SteamClient):
 
 
 async def shutdown_scheduler():
-    # Здесь можно остановить scheduler, если он глобальный
+    # Здесь можно было бы что-то написать...
     pass

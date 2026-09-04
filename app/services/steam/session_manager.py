@@ -2,32 +2,40 @@ import json
 import logging
 from pathlib import Path
 from typing import Optional
-from app.utils.retry import retry_async
+
 from aiosteampy.session import SteamSession, GuardConfirmationRequired
 from aiosteampy.transport.exceptions import NetworkError
 from aiosteampy.constants import Platform
 from aiosteampy.guard.account import SteamGuardAccount, MaFile
 
+from app.utils.retry import retry_async
 from app.config import settings
 
 logger = logging.getLogger(__name__)
 
+
 class SessionManager:
-    """Управление жизненным циклом Steam сессии."""
+    """
+    Управление жизненным циклом Steam сессии.
+    """
     def __init__(self, redis_client=None):
         self.redis = redis_client
         self._session: Optional[SteamSession] = None
 
 
     async def get_session(self) -> SteamSession:
-        """Возвращает активную сессию, при необходимости восстанавливая её."""
+        """
+        Возвращает активную сессию, при необходимости восстанавливая её.
+        """
         if self._session is None:
             await self._restore_or_create()
         return self._session
 
 
     async def _restore_or_create(self) -> None:
-        """Восстанавливает сессию из Redis или создаёт новую."""
+        """
+        Восстанавливает сессию из Redis или создаёт новую.
+        """
         if self.redis:
             saved = await self.redis.get("steam:session:tokens")
             if saved:

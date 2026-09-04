@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List
 
+
 class ISteamProvider(ABC):
     @abstractmethod
     async def initialize(self) -> None:

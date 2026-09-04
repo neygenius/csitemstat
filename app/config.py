@@ -2,6 +2,7 @@ import os
 from sqlalchemy.engine import URL
 from pydantic_settings import BaseSettings
 
+
 class Settings(BaseSettings):
     BOT_TOKEN: str
     WEBHOOK_SECRET: str
@@ -24,7 +25,7 @@ class Settings(BaseSettings):
     @property
     def DATABASE_URL(self) -> str:
         """
-        Async URL (for application)
+        Async URL (for application).
         """
         return URL.create(
             "postgresql+asyncpg",
@@ -38,7 +39,7 @@ class Settings(BaseSettings):
     @property
     def SYNC_DATABASE_URL(self) -> str:
         """
-        Sync URL (for Alembic)
+        Sync URL (for Alembic).
         """
         return URL.create(
             "postgresql+psycopg2",

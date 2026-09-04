@@ -1,7 +1,7 @@
 import logging
-from typing import Any, Dict, List, Optional
-
+import httpx
 from aiohttp import ClientError
+from typing import Any, Dict, List, Optional
 
 from aiosteampy.transport.exceptions import NetworkError
 from aiosteampy.client import SteamClient, SteamPublicClient, App, AppContext, Currency
@@ -13,23 +13,57 @@ from app.services.steam.session_manager import SessionManager
 from app.utils.retry import retry_async
 from app.config import settings
 
-
 logger = logging.getLogger(__name__)
 
-class SteamProvider(ISteamProvider):
-    """Реализация ISteamProvider на основе aiosteampy."""
 
+class SteamProvider(ISteamProvider):
+    """
+    Реализация ISteamProvider на основе aiosteampy.
+    """
     def __init__(self, session_manager: SessionManager):
         self._session_manager = session_manager
         self._session: Optional[SteamSession] = None
         self._client: Optional[SteamClient] = None
-        self._public_client = SteamPublicClient(country="RU", 
-                                                currency=Currency.RUB)
+        self._public_client = SteamPublicClient(country="RU", currency=Currency.RUB)
+        self._fallback_country = "RU"
+        self._fallback_currency = 5
+
+
+    async def _get_price_overview_fallback(self, app_id: int, market_hash_name: str) -> Dict[str, Any]:
+        """
+        Прямой запрос к Steam Web API для получения цены (на случай ошибки aiosteampy).
+        """
+        url = "https://steamcommunity.com/market/priceoverview/"
+        params = {
+            "appid": app_id,
+            "country": self._fallback_country,
+            "currency": self._fallback_currency,
+            "market_hash_name": market_hash_name,
+        }
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.get(url, params=params)
+            if resp.status_code != 200:
+                return {"success": False}
+            data = resp.json()
+            if not data.get("success", False):
+                return {"success": False}
+            lowest = data.get("lowest_price", "0")
+            median = data.get("median_price", "0")
+            volume = data.get("volume", "0")
+            return {
+                "success": True,
+                "lowest_price": lowest,
+                "median_price": median,
+                "volume": volume,
+            }
+
 
     async def initialize(self) -> None:
         self._session = await self._session_manager.get_session()
         self._client = SteamClient(session=self._session)
+        self._public_client = SteamPublicClient(country="RU", currency=Currency.RUB)
         logger.info("SteamProvider initialized")
+
 
     async def ensure_authenticated(self) -> bool:
         if self._session and self._session.cookies_are_valid:
@@ -50,10 +84,12 @@ class SteamProvider(ISteamProvider):
             await self._session_manager._create_new_session()
             self._session = await self._session_manager.get_session()
             self._client = SteamClient(session=self._session)
+            self._public_client = SteamPublicClient(country="RU", currency=Currency.RUB)
             return True
         except Exception as e:
             logger.error(f"Failed to ensure authentication: {e}", exc_info=True)
             return False
+
 
     async def get_price_overview(self, app_id: int, market_hash_name: str) -> Dict[str, Any]:
         try:
@@ -76,9 +112,14 @@ class SteamProvider(ISteamProvider):
                 "median_price": f"{overview.median_price / 100:.2f}" if overview.median_price is not None else "0.00",
                 "volume": str(overview.volume),
             }
+        except KeyError:
+            logger.warning(f"aiosteampy failed to parse price overview, using fallback for {market_hash_name}")
+            return await self._get_price_overview_fallback(app_id, market_hash_name)
+        
         except Exception as e:
             logger.error(f"Price overview error for {market_hash_name}: {e}", exc_info=True)
             return {"success": False}
+
 
     async def get_price_history(self, app_id: int, market_hash_name: str) -> List[List]:
         if not await self.ensure_authenticated():
@@ -97,12 +138,13 @@ class SteamProvider(ISteamProvider):
                 )
 
             return [
-                [entry.date.strftime("%b %d %Y"), entry.price_raw, str(entry.daily_volume)]
+                [entry.date.strftime("%b %d %Y %H: +0"), entry.price_raw, str(entry.daily_volume)]
                 for entry in history
             ]
         except Exception as e:
             logger.error(f"Price history error for {market_hash_name}: {e}", exc_info=True)
             return []
+
 
     async def get_inventory(self, steam_id64: int, app_id: int) -> Dict[str, Any]:
         if not await self.ensure_authenticated():
@@ -158,10 +200,13 @@ class SteamProvider(ISteamProvider):
             logger.error(f"Inventory error for {steam_id64} after retries: {e}", exc_info=True)
             return {"success": False}
 
+
     async def close(self) -> None:
         if self._client:
             await self._client.transport.close()
+
         if self._public_client:
             await self._public_client.transport.close()
+
         if self._session:
             await self._session_manager.close()

@@ -1,8 +1,10 @@
 import logging
-from datetime import datetime, timezone, date, timedelta
 from typing import List
+from datetime import datetime, timezone, date, timedelta
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.config import settings
 from app.db.models import PriceAlert, ItemSnapshot, ItemDailyStats, Subscription, User, Item
 from app.services.statistics import percent_change
@@ -10,8 +12,11 @@ from app.bot.messages import send_telegram_message
 
 logger = logging.getLogger(__name__)
 
-async def check_price_alerts(session: AsyncSession, bot_token: str):
-    """Проверяет все активные алерты и отправляет уведомления"""
+
+async def check_price_alerts(session: AsyncSession, bot_token: str) -> None:
+    """
+    Проверяет все активные алерты и отправляет уведомления.
+    """
     stmt = select(PriceAlert).where(PriceAlert.active == True)
     result = await session.execute(stmt)
     alerts = result.scalars().all()
@@ -56,10 +61,14 @@ async def check_price_alerts(session: AsyncSession, bot_token: str):
                 await send_telegram_message(bot_token, user.chat_id, text)
                 alert.last_triggered_at = datetime.now(timezone.utc)
                 session.add(alert)
+
     await session.commit()
 
-async def send_digests(session: AsyncSession, bot_token: str, frequency: str):
-    """Рассылает дайджесты с заданной периодичностью (daily/weekly)"""
+
+async def send_digests(session: AsyncSession, bot_token: str, frequency: str) -> None:
+    """
+    Рассылает дайджесты с заданной периодичностью (daily/weekly).
+    """
     stmt = select(Subscription).where(
         Subscription.active == True,
         Subscription.frequency == frequency
@@ -107,4 +116,5 @@ async def send_digests(session: AsyncSession, bot_token: str, frequency: str):
             await send_telegram_message(bot_token, user.chat_id, text)
             sub.last_sent_at = datetime.now(timezone.utc)
             session.add(sub)
+
     await session.commit()

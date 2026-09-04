@@ -32,7 +32,9 @@ class RateLimiter:
 
 
 class SteamClient:
-    """Фасад, делегирующий вызовы провайдеру."""
+    """
+    Фасад, делегирующий вызовы провайдеру.
+    """
 
     def __init__(self, provider: ISteamProvider):
         self._provider = provider

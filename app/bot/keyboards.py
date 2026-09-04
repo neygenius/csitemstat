@@ -1,10 +1,12 @@
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
+
 from app.db.models import Item
+
 
 def inventory_pagination(items: list[tuple[str, int]], page: int, items_per_page: int = 10) -> InlineKeyboardMarkup:
     """
-    Клавиатура пагинации инвентаря
+    Кнопки пагинации инвентаря.
     """
     builder = InlineKeyboardBuilder()
     start = page * items_per_page
@@ -23,9 +25,10 @@ def inventory_pagination(items: list[tuple[str, int]], page: int, items_per_page
         builder.row(*nav_buttons)
     return builder.as_markup()
 
+
 def item_actions(item_id: int) -> InlineKeyboardMarkup:
     """
-    Кнопки действий с предметом
+    Кнопки действий с предметом.
     """
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📊 Статистика", callback_data=f"stats:{item_id}"),
@@ -33,16 +36,21 @@ def item_actions(item_id: int) -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="⏰ Алерт", callback_data=f"alert:{item_id}")]
     ])
 
+
 def subscription_choice(item_id: int) -> InlineKeyboardMarkup:
     """
-    Кнопки выбора периода для subs
+    Кнопки выбора периода для subs.
     """
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📅 Ежедневно", callback_data=f"sub_add:{item_id}:daily"),
          InlineKeyboardButton(text="📆 Еженедельно", callback_data=f"sub_add:{item_id}:weekly")]
     ])
 
+
 def portfolio_pagination(items: list[Item], page: int, items_per_page: int = 10) -> InlineKeyboardMarkup:
+    """
+    Кнопки пагинации портфеля.
+    """
     builder = InlineKeyboardBuilder()
     start = page * items_per_page
     end = start + items_per_page
@@ -61,6 +69,9 @@ def portfolio_pagination(items: list[Item], page: int, items_per_page: int = 10)
 
 
 def tracked_item_actions(item_id: int) -> InlineKeyboardMarkup:
+    """
+    Кнопки действий с отслеживаемым предметом.
+    """
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📊 Статистика", callback_data=f"stats:{item_id}"),
          InlineKeyboardButton(text="🔔 Подписки", callback_data=f"tracked_subs:{item_id}")],
@@ -70,7 +81,24 @@ def tracked_item_actions(item_id: int) -> InlineKeyboardMarkup:
 
 
 def alert_period_keyboard() -> InlineKeyboardMarkup:
+    """
+    Кнопки выбора периода для alert.
+    """
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="24 часа", callback_data="alert_period:24h"),
          InlineKeyboardButton(text="7 дней", callback_data="alert_period:7d")]
+    ])
+
+
+def price_period_keyboard(item_id: int) -> InlineKeyboardMarkup:
+    """
+    Кнопки выбора временного окна графика.
+    """
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="7 дней", callback_data=f"price_period:{item_id}:7"),
+            InlineKeyboardButton(text="30 дней", callback_data=f"price_period:{item_id}:30"),
+            InlineKeyboardButton(text="90 дней", callback_data=f"price_period:{item_id}:90"),
+            InlineKeyboardButton(text="Всё время", callback_data=f"price_period:{item_id}:all"),
+        ]
     ])

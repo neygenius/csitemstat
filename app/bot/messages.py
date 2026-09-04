@@ -1,10 +1,12 @@
 import httpx
 import logging
+from typing import Optional
 
 from app.utils.retry import retry_async
 
 
 logger = logging.getLogger(__name__)
+
 
 async def send_telegram_message(bot_token: str, chat_id: int, text: str, reply_markup=None):
     """
@@ -25,10 +27,25 @@ async def send_telegram_message(bot_token: str, chat_id: int, text: str, reply_m
         except Exception as e:
             logger.error(f"Failed to send message: {e}", exc_info=True)
 
-async def send_photo(bot_token: str, chat_id: int, photo_bytes: bytes, caption: str = None):
+
+async def send_photo(
+    bot_token: str, 
+    chat_id: int, 
+    photo_bytes: bytes, 
+    caption: Optional[str] = None,
+    reply_markup=None
+) -> None:
+    """
+    Отправляет изображение с опциональной клавиатурой.
+    """
     url = f"https://api.telegram.org/bot{bot_token}/sendPhoto"
-    files = {"photo": photo_bytes}
     data = {"chat_id": chat_id, "caption": caption}
+    if caption is not None:
+        data["caption"] = caption
+    if reply_markup:
+        data["reply_markup"] = reply_markup.model_dump_json()
+
+    files = {"photo": ("chart.png", photo_bytes, "image/png")}
 
     async def _send():
         async with httpx.AsyncClient(timeout=30.0) as client:
