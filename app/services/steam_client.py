@@ -26,7 +26,9 @@ class RateLimiter:
                 wait = (1 - self.tokens) * (self.period / self.rate)
                 logger.debug(f"Rate limit: waiting {wait:.2f}s")
                 await asyncio.sleep(wait)
+                now = time.monotonic()
                 self.tokens = 0
+                self.updated_at = now
             else:
                 self.tokens -= 1
 

@@ -30,11 +30,11 @@ async def check_price_alerts(session: AsyncSession, bot_token: str) -> None:
         if alert.period == '24h':
             old_price = snapshot.price_24h_ago
         else:
-            seven_days_ago = date.today() - timedelta(days=7)
+            target_date = date.today() - timedelta(days=7)
             stmt_hist = select(ItemDailyStats.price).where(
                 ItemDailyStats.item_id == alert.item_id,
-                ItemDailyStats.date == seven_days_ago
-            )
+                ItemDailyStats.date <= target_date
+            ).order_by(ItemDailyStats.date.desc()).limit(1)
             hist_result = await session.execute(stmt_hist)
             old_price = hist_result.scalar_one_or_none()
 
@@ -104,12 +104,18 @@ async def send_digests(session: AsyncSession, bot_token: str, frequency: str) ->
         item = await session.get(Item, sub.item_id)
         item_name = item.market_hash_name if item else "Неизвестный предмет"
 
+        trend_icon = "без изменений"
+        if snapshot.trend_direction == 'up':
+            trend_icon = "📈"
+        if snapshot.trend_direction == 'down':
+            trend_icon = "📉"
+
         text = (
             f"📊 {'Ежедневный' if frequency == 'daily' else 'Еженедельный'} дайджест\n"
             f"Предмет: {item_name}\n"
             f"Текущая цена: {float(snapshot.median_price):.2f} {settings.CURRENCY_SYMBOL}\n"
             f"Изменение {period_text}: {change_str}\n"
-            f"Тренд: {snapshot.trend_direction}"
+            f"Тренд: {trend_icon}"
         )
         user = await session.get(User, sub.user_id)
         if user:

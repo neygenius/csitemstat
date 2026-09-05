@@ -1,7 +1,6 @@
 import logging
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from sqlalchemy.ext.asyncio import AsyncSession
 
 import app.state as state
 from app.config import settings
@@ -43,9 +42,12 @@ async def init_scheduler(redis_client, steam_client: SteamClient):
     scheduler.add_job(history_sync_job, 'cron', hour=2, minute=0, id='history_sync')
 
     scheduler.start()
+    state.scheduler = scheduler
     logger.info("Scheduler started")
 
 
 async def shutdown_scheduler():
-    # Здесь можно было бы что-то написать...
-    pass
+    if state.scheduler():
+        state.scheduler.shutdown(wait=False)
+        logger.info("Scheduler stopped")
+    return

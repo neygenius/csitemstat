@@ -19,12 +19,22 @@ async def send_telegram_message(bot_token: str, chat_id: int, text: str, reply_m
     }
     if reply_markup:
         payload["reply_markup"] = reply_markup
-    async with httpx.AsyncClient() as client:
-        try:
+
+    async def _send():
+        async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(url, json=payload)
             response.raise_for_status()
-        except Exception as e:
-            logger.error(f"Failed to send message: {e}", exc_info=True)
+
+    try:
+        await retry_async(
+            _send,
+            retries=3,
+            delay=2.0,
+            exceptions=(httpx.ConnectTimeout, httpx.ReadTimeout, 
+                        httpx.RemoteProtocolError, httpx.HTTPStatusError)
+        )
+    except Exception as e:
+        logger.error(f"Failed to send message after retries: {e}", exc_info=True)
 
 
 async def send_photo(

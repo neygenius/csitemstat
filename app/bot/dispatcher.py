@@ -458,13 +458,18 @@ async def cmd_stats(message: types.Message, item_name: str | None = None):
                 return
         
         # Базовое summary
-        trend = snapshot.trend_direction or "—"
+        trend_icon = "без изменений"
+        if snapshot.trend_direction == 'up':
+            trend_icon = "📈"
+        if snapshot.trend_direction == 'down':
+            trend_icon = "📉"
+
         text = (
             f"📊 {item.market_hash_name}\n"
             f"Мин. цена: {float(snapshot.lowest_price):.2f} {settings.CURRENCY_SYMBOL}\n"
             f"Медиана: {float(snapshot.median_price):.2f} {settings.CURRENCY_SYMBOL}\n"
             f"Объём (24ч): {snapshot.volume_24h}\n"
-            f"Тренд (7д): {trend}"
+            f"Тренд (7д): {trend_icon}"
         )
 
         if snapshot.price_24h_ago:
