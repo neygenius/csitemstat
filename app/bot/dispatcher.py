@@ -515,6 +515,24 @@ async def send_price_chart(chat_id: int, item_id: int, days: int | None = 30):
         if not item:
             return
 
+        period_key = "all" if days is None else str(days)
+        cache_key = f"plot:{item_id}:{period_key}"
+
+        # Проверяем кэш
+        if app_state.redis_client:
+            cached = await app_state.redis_client.get(cache_key)
+            if cached:
+                try:
+                    await bot.send_photo(
+                        chat_id,
+                        photo=BufferedInputFile(cached, filename="chart.png"),
+                        caption=item.market_hash_name,
+                        reply_markup=price_period_keyboard(item.id),
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to send price chart for item {item.market_hash_name}: {e}", exc_info=True)
+                return
+
         if days is not None and days <= 30:
             cutoff = datetime.now(timezone.utc) - timedelta(days=days)
             stmt = select(ItemHourlyStats).where(
@@ -538,6 +556,13 @@ async def send_price_chart(chat_id: int, item_id: int, days: int | None = 30):
             return
 
         img_bytes = generate_price_chart(dates, prices, item.market_hash_name)
+
+        # Сохраняем в кэш
+        if app_state.redis_client:
+            try:
+                await app_state.redis_client.setex(cache_key, 3600, img_bytes)
+            except Exception as e:
+                logger.warning(f"Failed to cache chart for {item.market_hash_name}: {e}")
 
         try:
             await bot.send_photo(

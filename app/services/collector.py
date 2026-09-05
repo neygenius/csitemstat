@@ -5,9 +5,11 @@ from collections import defaultdict
 from datetime import date, datetime, timezone, timedelta
 from dateutil import parser as date_parser
 
+from redis.asyncio.client import Redis
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import app.state as app_state
 from app.db.models import Item, ItemDailyStats, ItemHourlyStats, ItemSnapshot, UserTrackedItem
 from app.services.steam_client import SteamClient
 from app.services.statistics import compute_trend
@@ -71,6 +73,9 @@ async def update_snapshots(session: AsyncSession, steam_client: SteamClient, app
 
             await session.flush()
 
+            # Инвалидируем кэш графиков
+            await invalidate_price_chart_cache(app_state.redis_client, item.id)
+
         except Exception as e:
             logger.error(f"Error updating {item.market_hash_name}: {e}", exc_info=True)
 
@@ -93,6 +98,7 @@ async def sync_daily_history(session: AsyncSession, steam_client: SteamClient, a
             await save_hourly_history(session, steam_client, item, days=1)
             await aggregate_hourly_to_daily(session, item.id)
             await session.flush()
+            await invalidate_price_chart_cache(app_state.redis_client, item.id)
 
         except Exception as e:
             logger.error(f"History sync error for {item.market_hash_name}: {e}", exc_info=True)
@@ -309,9 +315,27 @@ async def update_single_item_snapshot(session: AsyncSession, steam_client: Steam
 
         await session.commit()
         logger.info(f"Snapshot {item.market_hash_name} updated successfully")
+
+        await invalidate_price_chart_cache(app_state.redis_client, item.id)
         return True
 
     except Exception as e:
         logger.error(f"Failed to update snapshot for {item.market_hash_name}: {e}", exc_info=True)
         await session.rollback()
         return False
+
+
+async def invalidate_price_chart_cache(redis_client: Redis, item_id: int):
+    """
+    Удаляет все закэшированные графики для указанного предмета.
+    """
+    if not redis_client:
+        return
+    pattern = f"plot:{item_id}:*"
+    cursor = 0
+    while True:
+        cursor, keys = await redis_client.scan(cursor, match=pattern, count=100)
+        if keys:
+            await redis_client.delete(*keys)
+        if cursor == 0:
+            break
