@@ -8,6 +8,7 @@ from aiogram.exceptions import TelegramNetworkError
 
 import app.state as state
 from app.config import settings
+from app.bot.cleanup import CleanupManager
 import app.bot.dispatcher as bot_module
 from app.services.steam_client import SteamClient
 from app.services.steam.factory import create_steam_provider
@@ -22,16 +23,18 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     r = redis.from_url(settings.REDIS_URL, encoding="utf-8", decode_responses=True)
-    bot_module.redis_client = r
-    app.state.redis = r
+    state.redis_client = r
     logger.info("Redis connected")
 
     provider = create_steam_provider(r)
     await provider.initialize()
     steam_client = SteamClient(provider)
     state.steam_client = steam_client
-    app.state.steam_client = steam_client
     logger.info("Steam client initialized")
+
+    cleanup_manager = CleanupManager(r)
+    state.cleanup_manager = cleanup_manager
+    logger.info("Cleanup manager initialized")
 
     await init_scheduler(r, steam_client)
     

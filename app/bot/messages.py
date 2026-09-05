@@ -4,7 +4,6 @@ from typing import Optional
 
 from app.utils.retry import retry_async
 
-
 logger = logging.getLogger(__name__)
 
 

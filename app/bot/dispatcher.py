@@ -2,35 +2,34 @@ import json
 import logging
 from datetime import date, timedelta, datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, BufferedInputFile
 
-import app.state as state
+import app.state as app_state
 from app.config import settings
 from app.db.base import async_session
-from app.db.models import (User, Item, UserTrackedItem, Subscription, 
-                           PriceAlert, ItemDailyStats, ItemHourlyStats, ItemSnapshot)
+from app.db.models import (
+    User, Item, UserTrackedItem, Subscription, PriceAlert, 
+    ItemDailyStats, ItemHourlyStats, ItemSnapshot)
 from app.services.collector import update_single_item_snapshot
 from app.services.crypto import encrypt_steam_id, decrypt_steam_id
 from app.services.inventory import fetch_grouped_inventory
 from app.services.plotter import generate_price_chart
 from app.services.statistics import percent_change
-from app.bot.keyboards import (inventory_pagination, item_actions, 
-                               subscription_choice, portfolio_pagination, 
-                               tracked_item_actions, alert_period_keyboard, price_period_keyboard)
+from app.bot.keyboards import (
+    inventory_pagination, item_actions, subscription_choice, portfolio_pagination, 
+    tracked_item_actions, alert_period_keyboard, price_period_keyboard)
+from app.bot.cleanup import CATEGORY_TEMP
 
 
 logger = logging.getLogger(__name__)
 
 bot = Bot(token=settings.BOT_TOKEN)
 dp = Dispatcher()
-
-redis_client = None
-
 
 class LinkSteam(StatesGroup):
     waiting_for_steam_id = State()
@@ -78,20 +77,34 @@ async def cmd_help(message: types.Message):
         "/help - эта справка\n\n"
         "Все действия с подписками, алертами и удалением выполняются через портфель"
     )
-    await message.answer(text)
+    msg = await message.answer(text)
+    if app_state.cleanup_manager:
+        await app_state.cleanup_manager.register_message(
+            message.chat.id, msg.message_id, CATEGORY_TEMP
+        )
 
 
 @dp.message(Command("link_steam"))
 async def cmd_link_steam(message: types.Message, state: FSMContext):
     await state.set_state(LinkSteam.waiting_for_steam_id)
-    await message.answer("Введите ваш SteamID64 (полный ID профиля)")
+
+    msg = await message.answer("Введите ваш SteamID64 (полный ID профиля)")
+    if app_state.cleanup_manager:
+        await app_state.cleanup_manager.register_message(
+            message.chat.id, msg.message_id, CATEGORY_TEMP
+        )
+
 
 @dp.message(LinkSteam.waiting_for_steam_id)
 async def process_steam_id(message: types.Message, state: FSMContext):
     try:
         steam_id = int(message.text.strip())
     except ValueError:
-        await message.answer("Неверный формат: SteamID64 должен быть числом. Попробуйте ещё раз")
+        msg = await message.answer("Неверный формат: SteamID64 должен быть числом. Попробуйте ещё раз")
+        if app_state.cleanup_manager:
+            await app_state.cleanup_manager.replace_message(
+                message.chat.id, msg.message_id, CATEGORY_TEMP, bot
+            )
         return
     
     async for session in get_db():
@@ -100,7 +113,13 @@ async def process_steam_id(message: types.Message, state: FSMContext):
             user.steam_id64 = encrypt_steam_id(steam_id)
             await session.commit()
         await state.clear()
-        await message.answer("✅ Steam ID успешно привязан!")
+
+        await message.delete()
+        msg = await message.answer("✅ Steam ID успешно привязан!")
+        if app_state.cleanup_manager:
+            await app_state.cleanup_manager.replace_message(
+                message.chat.id, msg.message_id, CATEGORY_TEMP, bot
+            )
 
 
 @dp.message(Command("inventory"))
@@ -108,36 +127,52 @@ async def cmd_inventory(message: types.Message):
     async for session in get_db():
         user = await session.get(User, message.from_user.id)
         if not user or not user.steam_id64:
-            await message.answer("Сначала привяжите Steam ID командой /link_steam")
+            msg = await message.answer("Сначала привяжите Steam ID командой /link_steam")
+            if app_state.cleanup_manager:
+                await app_state.cleanup_manager.replace_message(
+                    message.chat.id, msg.message_id, CATEGORY_TEMP, bot
+                )
             return
         steam_id = decrypt_steam_id(user.steam_id64)
 
     # Если есть в кэше
     cache_key = f"inv:{message.from_user.id}"
-    if redis_client:
-        cached = await redis_client.get(cache_key)
+    if app_state.redis_client:
+        cached = await app_state.redis_client.get(cache_key)
         if cached:
             items_list = json.loads(cached)
             total_pages = (len(items_list) + 9) // 10
-            await message.answer(
+            msg = await message.answer(
                 f"🎒 Ваш инвентарь (страница 1/{total_pages}):",
                 reply_markup=inventory_pagination(items_list, page=0)
             )
+            if app_state.cleanup_manager:
+                await app_state.cleanup_manager.replace_message(
+                    message.chat.id, msg.message_id, CATEGORY_TEMP, bot
+                )
             return
 
     # Если нет в кэше
-    steam_client = state.steam_client
+    steam_client = app_state.steam_client
     try:
         raw = await fetch_grouped_inventory(steam_client, steam_id, settings.APP_ID)
     except Exception as e:
         logger.error(f"Inventory fetch error: {e}", exc_info=True)
-        await message.answer("Не удалось загрузить инвентарь. Попробуйте позже")
+        msg = await message.answer("Не удалось загрузить инвентарь. Попробуйте позже")
+        if app_state.cleanup_manager:
+            await app_state.cleanup_manager.replace_message(
+                message.chat.id, msg.message_id, CATEGORY_TEMP, bot
+            )
         await steam_client.close()
         return
     await steam_client.close()
 
     if not raw:
-        await message.answer("Инвентарь пуст или скрыт")
+        msg = await message.answer("Инвентарь пуст или скрыт")
+        if app_state.cleanup_manager:
+            await app_state.cleanup_manager.replace_message(
+                message.chat.id, msg.message_id, CATEGORY_TEMP, bot
+            )
         return
     
     items_list = []
@@ -145,24 +180,28 @@ async def cmd_inventory(message: types.Message):
         items_list.append((name, cnt))
 
     # Кэшируем на 5 минут
-    if redis_client:
-        await redis_client.setex(cache_key, 300, json.dumps(items_list))
+    if app_state.redis_client:
+        await app_state.redis_client.setex(cache_key, 300, json.dumps(items_list))
 
     total_pages = (len(items_list) + 9) // 10
-    await message.answer(
+    msg = await message.answer(
         f"🎒 Ваш инвентарь (страница 1/{total_pages}):",
         reply_markup=inventory_pagination(items_list, page=0)
     )
+    if app_state.cleanup_manager:
+        await app_state.cleanup_manager.replace_message(
+            message.chat.id, msg.message_id, CATEGORY_TEMP, bot
+        )
 
 
 @dp.callback_query(F.data.startswith("inv_page:"))
 async def cb_inventory_page(callback: types.CallbackQuery):
     page = int(callback.data.split(":")[1])
     cache_key = f"inv:{callback.from_user.id}"
-    if not redis_client:
+    if not app_state.redis_client:
         await callback.answer("Кэш недоступен")
         return
-    cached = await redis_client.get(cache_key)
+    cached = await app_state.redis_client.get(cache_key)
 
     if not cached:
         await callback.answer("Инвентарь устарел, запросите заново /inventory")
@@ -170,10 +209,11 @@ async def cb_inventory_page(callback: types.CallbackQuery):
     
     items_list = json.loads(cached)
     total_pages = (len(items_list) + 9) // 10
-    await callback.message.edit_text(
-        f"🎒 Ваш инвентарь (страница {page+1}/{total_pages}):",
-        reply_markup=inventory_pagination(items_list, page)
-    )
+
+    text = f"🎒 Ваш инвентарь (страница {page+1}/{total_pages}):"
+    keyboard = inventory_pagination(items_list, page)
+
+    await callback.message.edit_text(text, reply_markup=keyboard)
     await callback.answer()
 
 
@@ -207,7 +247,6 @@ async def cb_add_track(callback: types.CallbackQuery):
         session.add(UserTrackedItem(user_id=user.id, item_id=item.id))
         await session.commit()
         await callback.answer(f"✅ Предмет '{item.market_hash_name}' добавлен в портфель!")
-        await callback.message.edit_reply_markup(reply_markup=None)
 
 
 @dp.message(Command("track"))
@@ -226,7 +265,11 @@ async def cmd_track(message: types.Message):
         items = result.scalars().all()
 
         if not items:
-            await message.answer("Предмет не найден. Проверьте название")
+            msg = await message.answer("Предмет не найден. Проверьте название")
+            if app_state.cleanup_manager:
+                    await app_state.cleanup_manager.replace_message(
+                        message.chat.id, msg.message_id, CATEGORY_TEMP, bot
+                    )
             return
         
         if len(items) > 1:
@@ -234,7 +277,11 @@ async def cmd_track(message: types.Message):
                 [InlineKeyboardButton(text=f"{it.market_hash_name}",
                                       callback_data=f"add_track:{it.market_hash_name}")] for it in items[:8]
             ])
-            await message.answer("Найдено несколько предметов, выберите интересующий:", reply_markup=kb)
+            msg = await message.answer("Найдено несколько предметов, выберите интересующий:", reply_markup=kb)
+            if app_state.cleanup_manager:
+                    await app_state.cleanup_manager.replace_message(
+                        message.chat.id, msg.message_id, CATEGORY_TEMP, bot
+                    )
             return 
         
         item = items[0]
@@ -245,12 +292,21 @@ async def cmd_track(message: types.Message):
         
         existing = await session.get(UserTrackedItem, (user.id, item.id))
         if existing:
-            await message.answer("Этот предмет уже в вашем портфеле")
+            msg = await message.answer("Этот предмет уже в вашем портфеле")
+            if app_state.cleanup_manager:
+                    await app_state.cleanup_manager.replace_message(
+                        message.chat.id, msg.message_id, CATEGORY_TEMP, bot
+                    )
             return
         
         session.add(UserTrackedItem(user_id=user.id, item_id=item.id))
         await session.commit()
-        await message.answer(f"✅ Предмет '{item.market_hash_name}' добавлен в портфель!", reply_markup=item_actions(item.id))
+        msg = await message.answer(f"✅ Предмет '{item.market_hash_name}' добавлен в портфель!", 
+                                   reply_markup=item_actions(item.id))
+        if app_state.cleanup_manager:
+                await app_state.cleanup_manager.replace_message(
+                    message.chat.id, msg.message_id, CATEGORY_TEMP, bot
+                )
 
 
 @dp.message(Command("bagpack"))
@@ -261,7 +317,11 @@ async def cmd_portfolio(message: types.Message):
     async for session in get_db():
         user = await session.get(User, message.from_user.id)
         if not user:
-            await message.answer("Сначала выполните /start")
+            msg = await message.answer("Сначала выполните /start")
+            if app_state.cleanup_manager:
+                    await app_state.cleanup_manager.replace_message(
+                        message.chat.id, msg.message_id, CATEGORY_TEMP, bot
+                    )
             return
 
         stmt = select(Item).join(UserTrackedItem).where(UserTrackedItem.user_id == user.id)
@@ -269,14 +329,22 @@ async def cmd_portfolio(message: types.Message):
         items = result.scalars().all()
 
         if not items:
-            await message.answer("Ваш портфель пуст. Добавьте предметы через /track или /inventory")
+            msg = await message.answer("Ваш портфель пуст. Добавьте предметы через /track или /inventory")
+            if app_state.cleanup_manager:
+                    await app_state.cleanup_manager.replace_message(
+                        message.chat.id, msg.message_id, CATEGORY_TEMP, bot
+                    )
             return
 
         total_pages = (len(items) + items_per_page - 1) // items_per_page
         text = f"📁 Ваш портфель (страница {page + 1}/{total_pages}):"
         keyboard = portfolio_pagination(items, page, items_per_page)
 
-        await message.answer(text, reply_markup=keyboard)
+        msg = await message.answer(text, reply_markup=keyboard)
+        if app_state.cleanup_manager:
+                await app_state.cleanup_manager.replace_message(
+                    message.chat.id, msg.message_id, CATEGORY_TEMP, bot
+                )
 
 
 @dp.callback_query(F.data.startswith("portfolio_page:"))
@@ -290,8 +358,7 @@ async def cb_portfolio_page(callback: types.CallbackQuery):
         items = result.scalars().all()
 
         if not items:
-            await callback.message.edit_text("Произошла ошибка")
-            await callback.answer()
+            await callback.answer("Произошла ошибка")
             return
 
         total_pages = (len(items) + items_per_page - 1) // items_per_page
@@ -309,7 +376,13 @@ async def cb_portfolio_page(callback: types.CallbackQuery):
 async def cb_tracked_item(callback: types.CallbackQuery):
     item_id = int(callback.data.split(":")[1])
     keyboard = tracked_item_actions(item_id)
-    await callback.message.answer("Выберите действие:", reply_markup=keyboard)
+
+    msg = await callback.message.answer("Выберите действие:", reply_markup=keyboard)
+    if app_state.cleanup_manager:
+        await app_state.cleanup_manager.replace_message(
+            callback.message.chat.id, msg.message_id, CATEGORY_TEMP, bot
+        )
+
     await callback.answer()
 
 
@@ -320,7 +393,11 @@ async def cmd_stats(message: types.Message, item_name: str | None = None):
     else:
         args = message.text.split(maxsplit=1)
         if len(args) < 2:
-            await message.answer("Использование: /stats <название предмета>")
+            msg = await message.answer("Использование: /stats <название предмета>")
+            if app_state.cleanup_manager:
+                await app_state.cleanup_manager.replace_message(
+                    message.chat.id, msg.message_id, CATEGORY_TEMP, bot
+                )
             return
         name = args[1].strip()
     
@@ -331,7 +408,11 @@ async def cmd_stats(message: types.Message, item_name: str | None = None):
         items = result.scalars().all()
 
         if not items:
-            await message.answer("Предмет не найден")
+            msg = await message.answer("Предмет не найден")
+            if app_state.cleanup_manager:
+                await app_state.cleanup_manager.replace_message(
+                    message.chat.id, msg.message_id, CATEGORY_TEMP, bot
+                )
             return
 
         if len(items) > 1:
@@ -339,24 +420,41 @@ async def cmd_stats(message: types.Message, item_name: str | None = None):
                 [InlineKeyboardButton(text=f"{it.market_hash_name}",
                                       callback_data=f"stats:{it.id}")] for it in items[:8]
             ])
-            await message.answer("Найдено несколько предметов, выберите интересующий:", reply_markup=kb)
+            msg = await message.answer("Найдено несколько предметов, выберите интересующий:", 
+                                       reply_markup=kb)
+            if app_state.cleanup_manager:
+                await app_state.cleanup_manager.replace_message(
+                    message.chat.id, msg.message_id, CATEGORY_TEMP, bot
+                )
             return 
         
         item = items[0]
         snapshot = await session.get(ItemSnapshot, item.id)
         if not snapshot:
             # Мгновенный сбор данных
-            await bot.send_message(message.chat.id, "⏳ Собираю актуальные данные...")
-            steam_client = state.steam_client
+            msg = await message.answer(message.chat.id, "⏳ Собираю актуальные данные...")
+            if app_state.cleanup_manager:
+                await app_state.cleanup_manager.replace_message(
+                    message.chat.id, msg.message_id, CATEGORY_TEMP, bot
+                )
+            steam_client = app_state.steam_client
             if steam_client:
                 success = await update_single_item_snapshot(session, steam_client, item)
                 if success:
                     snapshot = await session.get(ItemSnapshot, item.id)
                 else:
-                    await bot.send_message(message.chat.id, "Не удалось получить данные. Попробуйте позже.")
+                    msg = await message.answer("Не удалось получить данные. Попробуйте позже")
+                    if app_state.cleanup_manager:
+                        await app_state.cleanup_manager.replace_message(
+                            message.chat.id, msg.message_id, CATEGORY_TEMP, bot
+                        )
                     return
             else:
-                await bot.send_message(message.chat.id, "Сервис сбора данных недоступен.")
+                msg = await message.answer("Сервис сбора данных недоступен")
+                if app_state.cleanup_manager:
+                    await app_state.cleanup_manager.replace_message(
+                        message.chat.id, msg.message_id, CATEGORY_TEMP, bot
+                    )
                 return
         
         # Базовое summary
@@ -372,6 +470,10 @@ async def cmd_stats(message: types.Message, item_name: str | None = None):
         if snapshot.price_24h_ago:
             change = percent_change(float(snapshot.median_price), float(snapshot.price_24h_ago))
             text += f"\nИзменения за сутки: {'↑' if change>0 else '↓' if change<0 else '→'} {abs(change):.1f}%"
+
+        if app_state.cleanup_manager:
+            await app_state.cleanup_manager.clear_messages(message.chat.id, CATEGORY_TEMP, bot)
+
         await message.answer(text, reply_markup=item_actions(item.id))
 
         await send_price_chart(message.chat.id, item.id, days=30)
@@ -481,14 +583,27 @@ async def cb_sub_add(callback: types.CallbackQuery):
 
         session.add(Subscription(user_id=user.id, item_id=item.id, frequency=freq))
         await session.commit()
-        await callback.answer(f"✅ Подписка на '{item.market_hash_name}' ({freq}) активирована!")
-        await callback.message.edit_reply_markup(reply_markup=None)
+
+        text = f"✅ Подписка на '{item.market_hash_name}' ({freq}) активирована!"
+        msg = await callback.message.answer(text)
+        if app_state.cleanup_manager:
+            await app_state.cleanup_manager.replace_message(
+                callback.message.chat.id, msg.message_id, CATEGORY_TEMP, bot
+            )
+
+        await callback.answer()
 
 
 @dp.callback_query(F.data.startswith("subs:"))
 async def cb_subs(callback: types.CallbackQuery):
     item_id = int(callback.data.split(":")[1])
-    await callback.message.answer("Выберите период:", reply_markup=subscription_choice(item_id))
+
+    msg = await callback.message.answer("Выберите период:", reply_markup=subscription_choice(item_id))
+    if app_state.cleanup_manager:
+            await app_state.cleanup_manager.replace_message(
+                callback.message.chat.id, msg.message_id, CATEGORY_TEMP, bot
+            )
+
     await callback.answer()
 
 
@@ -515,7 +630,8 @@ async def cb_tracked_subs(callback: types.CallbackQuery):
         for sub in subs:
             text += f"• {sub.frequency}\n"
             kb_buttons.append([
-                InlineKeyboardButton(text=f"⚠️ Удалить {sub.frequency} ", callback_data=f"sub_remove:{sub.id}")
+                InlineKeyboardButton(text=f"⚠️ Удалить {sub.frequency} ", 
+                                     callback_data=f"sub_remove:{sub.id}")
             ])
 
         existing_periods = {sub.frequency for sub in subs}
@@ -535,7 +651,13 @@ async def cb_tracked_subs(callback: types.CallbackQuery):
                                       callback_data=f"sub_add:{item_id}:weekly")]
             ]
 
-        await callback.message.answer(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=kb_buttons))
+        msg = await callback.message.answer(text, 
+                                            reply_markup=InlineKeyboardMarkup(inline_keyboard=kb_buttons))
+        if app_state.cleanup_manager:
+            await app_state.cleanup_manager.replace_message(
+                callback.message.chat.id, msg.message_id, CATEGORY_TEMP, bot
+            )
+        
         await callback.answer()
 
 
@@ -547,7 +669,14 @@ async def cb_sub_remove(callback: types.CallbackQuery):
         if sub:
             await session.delete(sub)
             await session.commit()
-            await callback.answer("Подписка удалена")
+
+            text = "⚠️ Подписка удалена. Используйте /bagpack для просмотра обновлённого списка"
+            msg = await callback.message.answer(text)
+            if app_state.cleanup_manager:
+                await app_state.cleanup_manager.replace_message(callback.message.chat.id, 
+                                                                msg.message_id, CATEGORY_TEMP, bot)
+
+            await callback.answer()
         else:
             await callback.answer("Подписка не найдена")
 
@@ -575,14 +704,21 @@ async def cb_tracked_alerts(callback: types.CallbackQuery):
         for alert in alerts:
             text += f"• {alert.percent_change}% за {alert.period}\n"
             kb_buttons.append([
-                InlineKeyboardButton(text=f"⚠️ Удалить {alert.percent_change}% алерт", callback_data=f"alert_remove:{alert.id}")
+                InlineKeyboardButton(text=f"⚠️ Удалить {alert.percent_change}% алерт", 
+                                     callback_data=f"alert_remove:{alert.id}")
             ])
 
         kb_buttons.append([
             InlineKeyboardButton(text="➕ Добавить алерт", callback_data=f"alert_add_start:{item_id}")
         ])
 
-        await callback.message.answer(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=kb_buttons))
+        msg = await callback.message.answer(text, 
+                                            reply_markup=InlineKeyboardMarkup(inline_keyboard=kb_buttons))
+        if app_state.cleanup_manager:
+            await app_state.cleanup_manager.replace_message(
+                callback.message.chat.id, msg.message_id, CATEGORY_TEMP, bot
+            )
+        
         await callback.answer()
 
 
@@ -594,7 +730,14 @@ async def cb_alert_remove(callback: types.CallbackQuery):
         if alert:
             await session.delete(alert)
             await session.commit()
-            await callback.answer("Алерт удален")
+
+            text = "⚠️ Алерт удален. Используйте /bagpack для просмотра обновлённого списка"
+            msg = await callback.message.answer(text)
+            if app_state.cleanup_manager:
+                await app_state.cleanup_manager.replace_message(callback.message.chat.id, 
+                                                                msg.message_id, CATEGORY_TEMP, bot)
+
+            callback.message.answer()
         else:
             await callback.answer("Алерт не найден")
 
@@ -604,7 +747,13 @@ async def cb_alert_add_start(callback: types.CallbackQuery, state: FSMContext):
     item_id = int(callback.data.split(":")[1])
     await state.update_data(item_id=item_id)
     await state.set_state(AlertForm.waiting_for_percent)
-    await callback.message.answer("Введите процент изменения цены (например, 10):")
+
+    msg = await callback.message.answer("Введите процент изменения цены (например, 10):")
+    if app_state.cleanup_manager:
+        await app_state.cleanup_manager.replace_message(
+            callback.message.chat.id, msg.message_id, CATEGORY_TEMP, bot
+        )
+    
     await callback.answer()
 
 
@@ -615,12 +764,22 @@ async def process_alert_percent(message: types.Message, state: FSMContext):
         if percent <= 0:
             raise ValueError
     except ValueError:
-        await message.answer("Неверный процент. Введите положительное число.")
+        msg = await message.answer("Неверный процент. Введите положительное число.")
+        if app_state.cleanup_manager:
+            await app_state.cleanup_manager.replace_message(
+                message.chat.id, msg.message_id, CATEGORY_TEMP, bot
+            )
         return
 
     await state.update_data(percent=percent)
     await state.set_state(AlertForm.waiting_for_period)
-    await message.answer("Выберите период:", reply_markup=alert_period_keyboard())
+
+    await message.delete()
+    msg = await message.answer("Выберите период:", reply_markup=alert_period_keyboard())
+    if app_state.cleanup_manager:
+        await app_state.cleanup_manager.replace_message(
+            message.chat.id, msg.message_id, CATEGORY_TEMP, bot
+        )
 
 
 @dp.callback_query(F.data.startswith("alert_period:"))
@@ -657,7 +816,13 @@ async def cb_alert_period(callback: types.CallbackQuery, state: FSMContext):
         ))
         await session.commit()
 
-        await callback.message.answer(f"✅ Алерт создан: {percent}% за {period} для '{item.market_hash_name}'")
+        text = f"✅ Алерт создан: {percent}% за {period} для '{item.market_hash_name}'"
+        msg = await callback.message.answer(text)
+        if app_state.cleanup_manager:
+            await app_state.cleanup_manager.replace_message(
+                callback.message.chat.id, msg.message_id, CATEGORY_TEMP, bot
+            )
+        
         await state.clear()
         await callback.answer()
 
@@ -678,17 +843,42 @@ async def cb_tracked_untrack(callback: types.CallbackQuery):
             return
 
         await session.delete(tracked)
+
+        await session.execute(
+            delete(Subscription).where(
+                Subscription.user_id == user.id,
+                Subscription.item_id == item_id
+            )
+        )
+        await session.execute(
+            delete(PriceAlert).where(
+                PriceAlert.user_id == user.id,
+                PriceAlert.item_id == item_id
+            )
+        )
+
         await session.commit()
-        await callback.answer("Предмет удалён из портфеля")
-        await callback.message.edit_reply_markup(reply_markup=None)
+
+        text = "⚠️ Предмет удалён из портфеля. Используйте /bagpack для просмотра обновлённого списка"
+        msg = await callback.message.answer(text)
+        if app_state.cleanup_manager:
+            await app_state.cleanup_manager.replace_message(
+                callback.message.chat.id, msg.message_id, CATEGORY_TEMP, bot
+            )
+
+        await callback.answer()
 
 
 async def reply_use_help(message: types.Message):
-    await message.answer(
+    msg = await message.answer(
         "Данная команда в данный момент не поддерживается\n"
         "Пожалуйста, откройте /bagpack для управления предметами, подписками и алертами, "
         "или ознакомьтесь с /help"
     )
+    if app_state.cleanup_manager:
+        await app_state.cleanup_manager.replace_message(
+            message.chat.id, msg.message_id, CATEGORY_TEMP, bot
+        )
 
 
 @dp.message(Command("subscribe"))
