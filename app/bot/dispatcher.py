@@ -432,7 +432,7 @@ async def cmd_stats(message: types.Message, item_name: str | None = None):
         snapshot = await session.get(ItemSnapshot, item.id)
         if not snapshot:
             # Мгновенный сбор данных
-            msg = await message.answer(message.chat.id, "⏳ Собираю актуальные данные...")
+            msg = await message.answer("⏳ Собираю актуальные данные...")
             if app_state.cleanup_manager:
                 await app_state.cleanup_manager.replace_message(
                     message.chat.id, msg.message_id, CATEGORY_TEMP, bot
