@@ -192,7 +192,7 @@ _Распространяется под лицензией MIT. Подробн�
 
 ## 📬 Контакты
 
-- **Telegram‑бот** — [@your_bot_username](https://t.me/csitemstat_bot)
+- **Telegram‑бот** — [@csitemstat_bot](https://t.me/csitemstat_bot)
 - **GitHub Issues** — [Сообщить о проблеме](https://github.com/neygenius/tgbot/issues)
 
 <p align="center">
