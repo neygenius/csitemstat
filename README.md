@@ -1,332 +1,200 @@
-# Архитектурный документ: CSItemStat Bot
+# 💸 CSItemStat Bot — Трекер цен Steam в Telegram
 
-Архитектурный документ (версия 2.0)
+<p align="center">
+  <img src="https://img.shields.io/badge/Python-3.12-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python">
+  <img src="https://img.shields.io/badge/FastAPI-0.110-009688?style=flat-square&logo=fastapi&logoColor=white" alt="FastAPI">
+  <img src="https://img.shields.io/badge/PostgreSQL-15-4169E1?style=flat-square&logo=postgresql&logoColor=white" alt="PostgreSQL">
+  <img src="https://img.shields.io/badge/Redis-7-DC382D?style=flat-square&logo=redis&logoColor=white" alt="Redis">
+  <img src="https://img.shields.io/badge/aiogram-3.21-2C9BB4?style=flat-square&logo=telegram&logoColor=white" alt="aiogram">
+  <img src="https://img.shields.io/badge/Docker-2496ED?style=flat-square&logo=docker&logoColor=white" alt="Docker">
+  <img src="https://img.shields.io/badge/GitHub%20Actions-2088FF?style=flat-square&logo=github-actions&logoColor=white" alt="CI">
+  <img src="https://img.shields.io/badge/License-MIT-green?style=flat-square&logo=opensourceinitiative&logoColor=white" alt="License">
+</p>
 
-## 1. Назначение и ключевые функции
+> **CSItemStat Bot** — это Telegram‑бот для отслеживания цен на предметы из инвентаря Steam. Он помогает трейдерам и коллекционерам всегда быть в курсе рыночной ситуации: отображает актуальные цены, строит графики, присылает уведомления о резких изменениях и регулярные дайджесты со статистикой.
 
-Приложение предоставляет пользователям Telegram статистику по предметам из инвентаря Steam. Реализовано как **монолит** на базе FastAPI.
+<p align="center">
+  <img src=".\preview.png" alt="Preview">
+</p>
 
-**Функциональные возможности:**
-- Загрузка списка предметов из инвентаря Steam пользователя с группировкой по `market_hash_name`.
-- Отслеживание выбранных предметов: текущая минимальная цена, медиана, объём продаж, тренд.
-- Графики исторических цен.
-- Подписка на ежедневные/еженедельные сводки об изменении цены (процентный дайджест).
-- Алерты при достижении заданного **процентного** изменения цены за 24 часа или 7 дней.
-- Периодический автоматический сбор данных из Steam Web API.
+## ✨ Основные возможности
 
----
+| Функциональность | Описание |
+|---------|----------|
+| 🎒 **Инвентарь Steam** | Загружайте инвентарь, группируйте по предметам и добавляйте в персональный портфель. |
+| 📊 **Графики цен** | Просматривайте историю цен за 7, 30, 90 дней или всё время. |
+| ⏰ **Ценовые алерты** | Получайте уведомления, когда цена изменяется на заданный процент (за 24h или 7d). |
+| 📬 **Дайджесты** | Ежедневные или еженедельные сводки по каждому отслеживаемому предмету. |
+| 📈 **Тренды** | Автоматический расчёт направления тренда (восходящий / нисходящий / стабильный) на основе линейной регрессии. |
+| 💾 **Кэширование** | Графики и инвентарь кэшируются в Redis для мгновенной загрузки. |
 
-## 2. Общая схема взаимодействия
+## 🛠️ Технологический стек
 
+| Категория | Технологии |
+|-----------|------------|
+| **Язык** | Python 3.12 |
+| **Веб-фреймворк** | FastAPI + Uvicorn |
+| **База данных** | PostgreSQL 15 (SQLAlchemy 2.0 async) |
+| **Кэш** | Redis 7 (aioredis) |
+| **Telegram Bot** | aiogram (webhook) |
+| **Steam API** | aiosteampy (авторизация через Steam Guard) |
+| **Визуализация** | Matplotlib, Seaborn |
+| **Статистика** | NumPy, SciPy, Pandas |
+| **Контейнеризация** | Docker, Docker Compose |
+| **CI/CD** | GitHub Actions (тесты, линтеры) |
+| **Тестирование** | pytest, pytest-asyncio |
+
+## 🧠 Архитектурная схема
+
+```mermaid
+graph TB
+    TG[Telegram API] --> FastAPI[FastAPI]
+    FastAPI --> Bot[Telegram Bot]
+    Scheduler[Планировщик] --> Services[Сервисный слой]
+    Bot --> Services
+    Services --> PG[(PostgreSQL)]
+    Services --> Redis[(Redis)]
+    Services --> Steam[Steam API]
 ```
-Telegram Client  →  [Webhook]  →  FastAPI App  →  Telegram Bot API
-                                      │
-                              ┌───────┼───────┐
-                              ▼               ▼
-                        PostgreSQL        Redis
-                              │
-                              ▼
-                      Steam Web API
+
+## ⚙️ Установка и запуск
+
+### Предварительные требования
+- Python 3.12
+- Docker & Docker Compose (опционально)
+- Telegram Bot Token (получить у [@BotFather](https://t.me/BotFather))
+- Steam аккаунт с файлом [`.maFile`](https://github.com/Jessecar96/SteamDesktopAuthenticator) (для авторизации через Steam Guard)
+
+### Локальный запуск с Docker Compose
+
+```bash
+# Клонировать репозиторий
+git clone https://github.com/neygenius/tgbot.git
+cd steam_market_tracker
+
+# Создать и активировать виртуальное окружение
+python -m venv venv
+source venv/bin/activate  # Windows: venv\Scripts\activate
+
+# Установить зависимости
+pip install -r requirements.txt
+
+# Создать файл .env и заполнить все обязательные переменные (пример в .env.example)
+cp .env.example .env
+
+# Поднять PostgreSQL и Redis
+docker-compose up -d
+
+# Запустить приложение (веб-сервер)
+python run.py
 ```
 
-- FastAPI обрабатывает входящие обновления от Telegram (webhook).
-- Внутри того же процесса работает планировщик APScheduler, который периодически собирает цены и отправляет подписки.
-- Redis используется как кэш инвентаря и готовых изображений графиков.
+> После запуска бот автоматически установит вебхук для приёма обновлений от Telegram. Для локального тестирования без публичного домена используйте [Cloudflare Tunnel](https://developers.cloudflare.com/tunnel/) или аналоги
+
+## 🤖 Команды бота
+
+| Команда | Описание |
+|---------|----------|
+| `/start` | Регистрация пользователя и приветствие |
+| `/help` | Справка по командам |
+| `/link_steam <steam_id64>` | Привязка Steam ID к профилю (шифруется в БД) |
+| `/inventory` | Показать ваш инвентарь Steam (с пагинацией) |
+| `/bagpack` | Управление отслеживаемыми предметами (подписки, алерты, удаление) |
+| `/track <название>` | Найти и добавить предмет в портфель |
+| `/stats <название>` | Показать статистику и график цены для предмета |
+
+> Все действия с подписками и алертами выполняются через инлайн‑кнопки внутри `/bagpack` и `/stats`.
 
 ---
 
-## 3. Технологический стек
+## 🧪 Тестирование
 
-- **Язык:** Python 3.11+
-- **Веб-фреймворк:** FastAPI (uvicorn)
-- **Планировщик:** APScheduler
-- **База данных:** PostgreSQL 15
-- **ORM:** SQLAlchemy 2.0 (асинхронный)
-- **Кэш:** Redis 7 (aioredis)
-- **Статистика:** pandas, numpy, scipy
-- **Визуализация:** matplotlib (генерация PNG в памяти)
-- **HTTP-клиенты:** httpx (для Telegram Bot API и Steam API)
-- **Контейнеризация:** Docker, docker-compose
+### На данный момент проект покрыт тестами примерно на 40–50%.
+
+Для запуска тестов:
+
+```bash
+# Установить тестовые зависимости (если ещё не установлены)
+pip install pytest pytest-asyncio
+
+# Запустить все тесты
+pytest -v
+
+# Запустить с отчётом о покрытии
+pytest --cov=app tests/
+```
+
+> Интеграционные и e2e тесты находятся в процессе разработки...
 
 ---
 
-## 4. Структура проекта
+## 📁 Структура проекта (кратко)
 
 ```
 steam_market_tracker/
 ├── app/
-│   ├── main.py               # Инициализация приложения, lifespan, планировщик
-│   ├── config.py             # Настройки из переменных окружения
-│   ├── db/
-│   │   ├── base.py           # Асинхронный движок, Base, get_session
-│   │   └── models.py         # Модели SQLAlchemy
-│   ├── repositories/         # Доступ к данным
-│   ├── services/
-│   │   ├── steam_client.py   # Обёртка Steam API (инвентарь, цены, куки, rate limit)
-│   │   ├── collector.py      # Логика сбора цен и сохранения в БД
-│   │   ├── inventory.py      # Получение, группировка и кэширование инвентаря
-│   │   ├── statistics.py     # Расчёт трендов, процентных изменений
-│   │   ├── plotter.py        # Генерация графиков
-│   │   └── notifier.py       # Отправка уведомлений (дайджесты, алерты)
-│   ├── bot/
-│   │   ├── webhook.py        # Обработчик POST /webhook
-│   │   ├── dispatcher.py     # Роутинг команд и callback-запросов
-│   │   └── templates.py      # Формирование текстов и inline-клавиатур
-│   └── scheduler/
-│       └── jobs.py           # Задания APScheduler
-├── tests/
-├── Dockerfile
-├── docker-compose.yml
-├── requirements.txt
-└── .env.example
+│   ├── main.py              # FastAPI приложение, lifespan, webhook
+│   ├── config.py            # Pydantic настройки из .env
+│   ├── state.py             # Глобальные объекты
+│   ├── db/                  # Модели SQLAlchemy
+│   ├── services/            # Бизнес-логика: сбор цен, статистика, графики, уведомления
+│   ├── bot/                 # Telegram‑бот: диспетчер, клавиатуры, сообщения, очистка
+│   ├── scheduler/           # Планировщик APScheduler
+│   └── utils/               # Вспомогательные утилиты
+├── tests/                   # Тесты
+├── docker-compose.yaml      # Управление контейнерами PostgreSQL и Redis
+├── requirements.txt         # Зависимости
+└── .env.example             # Пример переменных окружения
 ```
 
----
+## 🔧 Переменные окружения (`.env`)
 
-## 5. Модель данных (PostgreSQL)
+| Переменная | Описание |
+|---|---|
+| `BOT_TOKEN` | Токен Telegram-бота |
+| `WEBHOOK_SECRET` | Секретный токен для вебхука (проверка заголовка) |
+| `WEBHOOK_URL` | Публичный URL вашего сервера (например, `https://example.com`) |
+| `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_NAME` | Параметры подключения к PostgreSQL |
+| `REDIS_URL` | Строка подключения к Redis (например, `redis://redis:6379/0`) |
+| `STEAM_USERNAME`, `STEAM_PASSWORD` | Данные для входа в Steam (аккаунт с .maFile) |
+| `STEAM_GUARD_FILE` | Путь к файлу `.maFile` (например, `/home/guard.maFile`) |
+| `STEAM_SESSION_TTL` | Время жизни сессии в Redis (по умолчанию 604800) |
+| `FERNET_KEY` | Ключ для шифрования SteamID (генерируется: `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`) |
 
-### 5.1 Пользователи
+> Полный список — в файле `.env.example`.
 
-```sql
-CREATE TABLE users (
-    id          BIGINT PRIMARY KEY,        -- Telegram user_id
-    chat_id     BIGINT NOT NULL,
-    steam_id64  BYTEA,                     -- AES-зашифрованный SteamID64
-    created_at  TIMESTAMPTZ DEFAULT now()
-);
-```
+## 👉👈 Как внести вклад
 
-### 5.2 Предметы
+1. Форкните репозиторий.
+2. Создайте ветку для вашей фичи (`git checkout -b feature/amazing-feature`).
+3. Напишите код и добавьте тесты (желательно).
+4. Убедитесь, что все тесты проходят (`pytest`).
+5. Зафиксируйте изменения (`git commit -m 'Add some amazing feature'`).
+6. Отправьте пул-реквест в ветку `main`.
 
-```sql
-CREATE TABLE items (
-    id               SERIAL PRIMARY KEY,
-    app_id           INTEGER NOT NULL,
-    market_hash_name TEXT NOT NULL,
-    name             TEXT,                 -- Человекочитаемое (можно заполнять из инвентаря)
-    icon_url         TEXT,
-    is_tracked       BOOLEAN DEFAULT false,
-    UNIQUE (app_id, market_hash_name)
-);
-```
+## 🎯 Планы по развитию (To‑Do)
 
-### 5.3 Отслеживаемые пользователем предметы
+- [x] **Кэширование графиков в Redis** — повторные запросы загружаются моментально, без повторной генерации.
+- [x] **Автоматический сбор данных** — планировщик обновляет цены и историю в фоновом режиме.
+- [ ] **Расширение тестового покрытия** — написание тестов с распределением примерно 80/15/5 между модульными, интеграционными и E2E-тестами.
+- [ ] **Система мониторинга** — интеграция Prometheus и Grafana для отслеживания состояния задач, ошибок и времени ответа.
+- [ ] **AI‑ассистент для прогнозирования** — внедрение технологий машинного обучения для предсказания цен на 7, 30 и 90 дней с оценкой вероятности.
+- [ ] **Telegram Mini App** — разработка встроенного интерфейса для более удобного управления портфелем, графиками и настройками.
 
-```sql
-CREATE TABLE user_tracked_items (
-    user_id  BIGINT REFERENCES users(id),
-    item_id  INTEGER REFERENCES items(id),
-    added_at TIMESTAMPTZ DEFAULT now(),
-    PRIMARY KEY (user_id, item_id)
-);
-```
+## 📝 Известные ограничения
 
-### 5.4 История дневных цен
++ В периоды пиковых нагрузок возможны незначительные задержки при обработке запросов к внешним API Steam.
++ При работе с большим количеством подписок и алертов рекомендуется периодически пересматривать их актуальность для оптимальной производительности.
++ Из-за отсутствия встроенного мониторинга сложно контролировать состояние реализаций задач.
 
-```sql
-CREATE TABLE item_daily_stats (
-    item_id INTEGER REFERENCES items(id),
-    date    DATE NOT NULL,
-    price   NUMERIC(10,2) NOT NULL,       -- медианная цена (USD)
-    volume  INTEGER NOT NULL,
-    PRIMARY KEY (item_id, date)
-);
-```
+## 🤝 Лицензия
+_Распространяется под лицензией MIT. Подробнее см. в файле [LICENSE](LICENSE)_
 
-### 5.5 Актуальный снапшот предмета
+## 📬 Контакты
 
-```sql
-CREATE TABLE item_snapshot (
-    item_id         INTEGER PRIMARY KEY REFERENCES items(id),
-    lowest_price    NUMERIC(10,2),
-    median_price    NUMERIC(10,2),
-    volume_24h      INTEGER,
-    price_24h_ago   NUMERIC(10,2),          -- цена сутки назад (заполняется из истории)
-    trend_slope     NUMERIC(10,6),          -- наклон линейной регрессии за 7 дней
-    trend_direction TEXT CHECK (trend_direction IN ('up','down','stable')),
-    updated_at      TIMESTAMPTZ
-);
-```
+- **Telegram‑бот** — [@your_bot_username](https://t.me/csitemstat_bot)
+- **GitHub Issues** — [Сообщить о проблеме](https://github.com/neygenius/tgbot/issues)
 
-### 5.6 Подписки на периодические дайджесты
-
-```sql
-CREATE TABLE subscriptions (
-    id           SERIAL PRIMARY KEY,
-    user_id      BIGINT NOT NULL REFERENCES users(id),
-    item_id      INTEGER NOT NULL REFERENCES items(id),
-    frequency    TEXT NOT NULL CHECK (frequency IN ('daily', 'weekly')),
-    active       BOOLEAN DEFAULT true,
-    last_sent_at TIMESTAMPTZ,
-    created_at   TIMESTAMPTZ DEFAULT now(),
-    UNIQUE (user_id, item_id, frequency)
-);
-```
-
-### 5.7 Процентные ценовые алерты
-
-```sql
-CREATE TABLE price_alerts (
-    id                 SERIAL PRIMARY KEY,
-    user_id            BIGINT NOT NULL REFERENCES users(id),
-    item_id            INTEGER NOT NULL REFERENCES items(id),
-    percent_change     NUMERIC(5,2) NOT NULL,   -- 5.00 означает 5%
-    period             TEXT NOT NULL CHECK (period IN ('24h', '7d')),
-    active             BOOLEAN DEFAULT true,
-    last_triggered_at  TIMESTAMPTZ,
-    created_at         TIMESTAMPTZ DEFAULT now()
-);
-```
-
-### 5.8 Индексы
-
-- `item_daily_stats (item_id, date DESC)` – быстрый доступ к последним точкам.
-- `user_tracked_items (item_id)` – поиск пользователей, отслеживающих предмет.
-- `subscriptions (active, frequency, last_sent_at)` – выборка активных подписок для дайджеста.
-- `price_alerts (item_id, active)` – проверка при обновлении цены.
-
----
-
-## 6. Ключевые модули и потоки данных
-
-### 6.1 Обработка команд Telegram
-
-**Webhook (`POST /webhook`)**  
-Принимает JSON от Telegram, верифицирует секретный токен. Диспетчер определяет команду и запускает соответствующий сценарий.
-
-**Основные команды:**
-
-| Команда | Действие |
-|--------|----------|
-| `/start` | Регистрация пользователя в БД (если ещё нет). |
-| `/link_steam <steam_id64>` | Привязка Steam ID, шифрование и сохранение. |
-| `/inventory` | Получить список предметов инвентаря. |
-| `/track <название>` | Добавить предмет в отслеживание. |
-| `/untrack <название>` | Удалить из отслеживания. |
-| `/stats <название>` | Сводка + график. |
-| `/subscribe <название> daily\|weekly` | Подписка на дайджест. |
-| `/unsubscribe <название>` | Отключение подписки. |
-| `/alert <название> <процент>` | Создать алерт на изменение цены (по умолчанию за 24h). |
-| `/alert <название> <процент> 7d` | Алерт за 7 дней. |
-| `/alerts` | Показать свои активные алерты. |
-| `/delete_alert <id>` | Удалить алерт. |
-
-**Callback-запросы (inline-кнопки):**
-- `inventory_page:<номер>` – пагинация инвентаря.
-- `add_track:<item_id>` – добавить предмет из инвентаря в отслеживание.
-
-### 6.2 Импорт инвентаря
-
-**Сценарий:**  
-1. Пользователь выполняет `/inventory`.  
-2. Проверяется наличие `steam_id64` в профиле. Если отсутствует – предлагается выполнить `/link_steam`.  
-3. Проверяется кэш Redis: `inv:{user_id}` (время жизни 5 минут). Если есть – берётся оттуда.  
-4. Иначе вызывается `SteamClient.get_inventory(steam_id64, app_id)`.  
-   - Эндпоинт: `https://steamcommunity.com/id/{steam_id64}/inventory/json/{app_id}/2`  
-   - Ответ: JSON с описаниями и `market_hash_name` каждого предмета.  
-5. Сервер группирует предметы по `market_hash_name`, подсчитывает количество.  
-6. Для новых `market_hash_name` создаются записи в таблице `items` (если отсутствуют).  
-7. Результат сохраняется в Redis на 300 секунд.  
-8. Пользователю отправляется список:  
-   ```
-   🔹 AK-47 | Redline (Field-Tested) — 3 шт.
-   🔹 M4A4 | Asiimov (Battle-Scarred) — 1 шт.
-   ```
-   С инлайн-кнопкой «➕ Отслеживать» под каждым предметом и кнопками навигации (по 10 предметов на странице).
-
-**Пагинация** реализована через callback_data: `inventory_page:2`. При нажатии сервер берёт список из Redis и отправляет нужную страницу.
-
-### 6.3 Сбор цен из Steam
-
-**SteamClient**  
-Асинхронный HTTP-клиент с куками, rate-limit (семафор 5, 20 запросов/мин). Методы:
-- `get_price_overview(app_id, market_hash_name)` → lowest_price, median_price, volume (за 24h).
-- `get_price_history(app_id, market_hash_name)` → массив `[date, price, volume]`.
-- `get_inventory(steam_id64, app_id)` → сырой JSON инвентаря.
-
-**Планировщик (APScheduler)**  
-- **Задача `update_snapshots` (каждые 30 минут)**  
-  1. Для всех предметов, у которых есть хотя бы один отслеживающий пользователь или `is_tracked = true`, выполняется запрос `price_overview`.  
-  2. Обновляется `item_snapshot`. Если запись за текущий день ещё не добавлена, вставляется строка в `item_daily_stats`.  
-  3. Для каждого обновлённого предмета вычисляется тренд (наклон регрессии за 7 дней).  
-  4. Поле `price_24h_ago` заполняется значением цены из `item_daily_stats` за предыдущий день (если есть).  
-  5. После обновления всех снапшотов запускается проверка процентных алертов (вызов `notifier.check_price_alerts`).  
-
-- **Задача `sync_daily_history` (раз в сутки, 02:00 UTC)**  
-  Для всех активных предметов запрашивается `price_history`, сохраняются недостающие дни.
-
-- **Задача `send_digests`**  
-  - **Ежедневная** (10:00): выбираются активные подписки с `frequency='daily'`.  
-  - **Еженедельная** (каждый понедельник, 10:00): подписки с `frequency='weekly'`.  
-  - Для каждой подписки формируется сообщение:  
-    ```
-    📊 Еженедельный дайджест
-    AK-47 | Redline (Field-Tested)
-    Текущая цена: 12.50 USD
-    Изменение за неделю: ↑ 3.2%
-    Тренд: восходящий
-    ```
-  - Отправляется пользователю через Telegram API. Обновляется `last_sent_at`.
-
-### 6.4 Процентные алерты
-
-При создании алерта через `/alert` сохраняется запись в `price_alerts` с указанным процентом и периодом (`24h` или `7d`).
-
-**Проверка алертов** (встроена в конец задачи `update_snapshots`):
-1. Для каждого обновлённого предмета выбираются все активные алерты.
-2. Рассчитывается текущее изменение:
-   - Для `24h`: `((current_price - price_24h_ago) / price_24h_ago) * 100`.
-   - Для `7d`: цена 7-дневной давности извлекается из `item_daily_stats`.
-3. Если модуль изменения >= `percent_change`, отправляется уведомление:  
-   ```
-   ⚠️ Ценовой алерт
-   AK-47 | Redline (Field-Tested)
-   Цена выросла на 7.2% за 24 часа
-   Текущая: 12.50 USD
-   ```
-4. `last_triggered_at` обновляется, чтобы избежать повторных уведомлений в том же периоде (повторно сработает только при следующем обновлении, если изменение всё ещё выше порога, или после нового пересечения порога).
-
-### 6.5 Статистические расчёты
-
-**Модуль `statistics.py`:**
-- `compute_trend(prices_array)` → slope, direction.
-- `compute_percent_change(current_price, old_price)` → float.
-- `get_price_days_ago(item_id, days)` – выборка из `item_daily_stats`.
-
-### 6.6 Кэширование (Redis)
-
-| Ключ | Содержимое | TTL |
-|------|------------|-----|
-| `snapshot:{item_id}` | JSON снапшота | 60 сек |
-| `plot:{item_id}:{days}` | Байты PNG графика | 1 час |
-| `inv:{user_id}` | Сгруппированный инвентарь | 5 мин |
-
-### 6.7 Безопасность
-
-- **SteamID64**: шифруется Fernet перед записью в БД, ключ в переменных окружения.
-- **Steam-куки**: хранятся только в памяти (из `.env`), никогда не логируются.
-- **Telegram webhook**: проверка `X-Telegram-Bot-Api-Secret-Token`.
-- **База данных**: доступ только из внутренней сети docker-compose.
-
----
-
-## 7. Развёртывание
-
-`docker-compose.yml` содержит сервисы:
-- `app`: FastAPI, порт 8000.
-- `db`: PostgreSQL 15.
-- `redis`: Redis 7-alpine.
-
-Переменные окружения:
-- `BOT_TOKEN`
-- `WEBHOOK_SECRET`
-- `DATABASE_URL`
-- `REDIS_URL`
-- `STEAM_COOKIES` (JSON-строка с куками)
-- `FERNET_KEY`
-
----
-
-## 8. Заключение
-
-Документ описывает полностью готовую к реализации монолитную архитектуру сервиса отслеживания цен Steam. Все новые требования — импорт инвентаря с группировкой, подписки на периодические дайджесты и процентные ценовые алерты — интегрированы в единую кодовую базу с сохранением простоты и производительности.
+<p align="center">
+  Сделано с ❤️ для сообщества Steam и трейдеров CS:GO
+</p>
