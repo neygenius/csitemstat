@@ -2,6 +2,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from aiosteampy.session import GuardConfirmationRequired
+from aiosteampy.transport.exceptions import NetworkError
 
 from app.config import settings
 from app.services.steam.session_manager import SessionManager
@@ -9,7 +10,7 @@ from app.services.steam.session_manager import SessionManager
 
 @pytest.fixture
 def session_manager():
-    return SessionManager(redis_client=MagicMock())
+    return SessionManager(redis_client=AsyncMock())
 
 
 @pytest.mark.asyncio
@@ -62,7 +63,7 @@ async def test_restore_or_create_invalid_cookies_refresh_fails(session_manager):
     ) as mock_deser:
         mock_session = MagicMock(cookies_are_valid=False)
         mock_session.refresh_access_token = AsyncMock(
-            side_effect=Exception("refresh failed")
+            side_effect=NetworkError("refresh failed")
         )
         mock_deser.return_value = mock_session
         with patch.object(

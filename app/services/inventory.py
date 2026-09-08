@@ -20,7 +20,7 @@ async def fetch_grouped_inventory(
 
     # Собираем classid-instanceid для быстрого доступа к описаниям
     items_count = {}
-    for asset_id, asset in rg_inventory.values():
+    for asset in rg_inventory.values():
         classid = asset.get("classid")
         instanceid = asset.get("instanceid")
         key = f"{classid}_{instanceid}"

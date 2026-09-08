@@ -1,6 +1,7 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from aiosteampy.transport.exceptions import NetworkError
 
 from app.services.steam.provider import SteamProvider
 from app.services.steam.session_manager import SessionManager
@@ -116,7 +117,7 @@ async def test_ensure_authenticated_invalid_refresh_success(provider):
 async def test_ensure_authenticated_refresh_fails_create_new(provider):
     provider._session = MagicMock(cookies_are_valid=False)
     provider._session.refresh_access_token = AsyncMock(
-        side_effect=Exception("refresh fail")
+        side_effect=NetworkError("refresh failed")
     )
     provider._session_manager._create_new_session = AsyncMock()
     provider._session_manager.get_session = AsyncMock(
@@ -131,7 +132,7 @@ async def test_ensure_authenticated_refresh_fails_create_new(provider):
 async def test_ensure_authenticated_total_failure(provider):
     provider._session = MagicMock(cookies_are_valid=False)
     provider._session.refresh_access_token = AsyncMock(
-        side_effect=Exception("refresh fail")
+        side_effect=NetworkError("refresh failed")
     )
     provider._session_manager._create_new_session = AsyncMock(
         side_effect=Exception("create fail")
