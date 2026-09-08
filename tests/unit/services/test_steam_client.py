@@ -13,23 +13,20 @@ class TestRateLimiter:
             await limiter.acquire()
             mock_sleep.assert_called_once()
 
-    async def test_tokens_refill(self):
+    async def test_tokens_refill(self, mocker):
         limiter = RateLimiter(2, period=60)
-        await limiter.acquire()
-        await limiter.acquire()
+        # Оба токена уже использованы
+        limiter.tokens = 0
+        limiter.updated_at = 0
 
-        # Имитируем прошествие 30 секунд
-        limiter.updated_at = monotonic() - 30
-
-        # Теперь должен быть 1 токен (2*30/60 = 1)
-        assert limiter.tokens == 0   # после двух acquire токены исчерпаны
-        await limiter.acquire()      # это вызовет пополнение и использование токена
-        assert limiter.tokens == 0   # после использования снова 0
-
-        # Проверяем, что sleep не вызывался, так как токен был доступен
+        mocker.patch('time.monotonic', return_value=30)
         with patch('asyncio.sleep', return_value=None) as mock_sleep:
-            await limiter.acquire()  # здесь уже недостаточно токенов, должен ждать
-            mock_sleep.assert_called_once()
+            await limiter.acquire()
+
+        # За 30 секунд при rate=2 и period=60 получаем 1 токен
+        # sleep не вызывается, а токен используется
+        mock_sleep.assert_not_called()
+        assert limiter.tokens == 0
 
 class TestSteamClient:
     async def test_get_price_overview_delegates(self, mock_steam_client):
