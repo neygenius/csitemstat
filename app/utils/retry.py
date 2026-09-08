@@ -1,8 +1,7 @@
-from typing import Callable, TypeVar, Awaitable
-
 import asyncio
 import logging
-
+from collections.abc import Awaitable, Callable
+from typing import TypeVar
 
 T = TypeVar("T")
 logger = logging.getLogger(__name__)
@@ -47,8 +46,6 @@ async def retry_forever(
             return await func()
         except exceptions as e:
             wait = min(delay * (backoff ** (attempt - 1)), 60)  # ограничим 60 сек
-            logger.warning(
-                f"Attempt {attempt} failed: {e}. Retrying in {wait:.1f}s..."
-            )
+            logger.warning(f"Attempt {attempt} failed: {e}. Retrying in {wait:.1f}s...")
             await asyncio.sleep(wait)
             attempt += 1

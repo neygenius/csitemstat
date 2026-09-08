@@ -1,11 +1,8 @@
 from logging.config import fileConfig
-import os
 
-from sqlalchemy import create_engine
-from sqlalchemy import pool
+from sqlalchemy import create_engine, pool
 
 from alembic import context
-
 from app.config import settings
 from app.db.models import Base
 
@@ -29,7 +26,10 @@ target_metadata = Base.metadata
 # my_important_option = config.get_main_option("my_important_option")
 # ... etc.
 
-print(f"Connecting to: {settings.SYNC_DATABASE_URL.replace(settings.DB_PASSWORD, '***')}")
+print(
+    f"Connecting to: {settings.SYNC_DATABASE_URL.replace(settings.DB_PASSWORD, '***')}"
+)
+
 
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode.
@@ -48,7 +48,7 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
-        output_encoding='utf-8',
+        output_encoding="utf-8",
     )
 
     with context.begin_transaction():
@@ -70,7 +70,7 @@ def run_migrations_online() -> None:
             target_metadata=target_metadata,
             compare_type=True,
             compare_server_default=True,
-            output_encoding='utf-8',
+            output_encoding="utf-8",
         )
         with context.begin_transaction():
             context.run_migrations()

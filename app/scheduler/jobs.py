@@ -2,10 +2,10 @@ import logging
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-import app.state as state
+from app import state
 from app.config import settings
 from app.db.base import async_session
-from app.services.collector import update_snapshots, sync_daily_history
+from app.services.collector import sync_daily_history, update_snapshots
 from app.services.notifier import check_price_alerts, send_digests
 from app.services.steam_client import SteamClient
 
@@ -35,11 +35,15 @@ async def init_scheduler(redis_client, steam_client: SteamClient):
         async with async_session() as session:
             await sync_daily_history(session, steam_client, settings.APP_ID)
 
-    scheduler.add_job(update_snapshots_job, 'interval', minutes=30, id='update_snapshots')
-    scheduler.add_job(check_alerts_job, 'interval', minutes=30, id='check_alerts')
-    scheduler.add_job(daily_digest, 'cron', hour=10, minute=0, id='daily_digest')
-    scheduler.add_job(weekly_digest, 'cron', day_of_week='mon', hour=10, minute=0, id='weekly_digest')
-    scheduler.add_job(history_sync_job, 'cron', hour=2, minute=0, id='history_sync')
+    scheduler.add_job(
+        update_snapshots_job, "interval", minutes=30, id="update_snapshots"
+    )
+    scheduler.add_job(check_alerts_job, "interval", minutes=30, id="check_alerts")
+    scheduler.add_job(daily_digest, "cron", hour=10, minute=0, id="daily_digest")
+    scheduler.add_job(
+        weekly_digest, "cron", day_of_week="mon", hour=10, minute=0, id="weekly_digest"
+    )
+    scheduler.add_job(history_sync_job, "cron", hour=2, minute=0, id="history_sync")
 
     scheduler.start()
     state.scheduler = scheduler
@@ -50,4 +54,3 @@ async def shutdown_scheduler():
     if state.scheduler is not None:
         state.scheduler.shutdown(wait=False)
         logger.info("Scheduler stopped")
-    return

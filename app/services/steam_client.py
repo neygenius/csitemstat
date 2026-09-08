@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import time
-from typing import Any, Dict, List
+from typing import Any
 
 from app.services.steam.interface import ISteamProvider
 
@@ -20,7 +20,9 @@ class RateLimiter:
         async with self.lock:
             now = time.monotonic()
             elapsed = now - self.updated_at
-            self.tokens = min(self.rate, self.tokens + elapsed * (self.rate / self.period))
+            self.tokens = min(
+                self.rate, self.tokens + elapsed * (self.rate / self.period)
+            )
             self.updated_at = now
             if self.tokens < 1:
                 wait = (1 - self.tokens) * (self.period / self.rate)
@@ -42,15 +44,17 @@ class SteamClient:
         self._provider = provider
         self._rate_limiter = RateLimiter(20)
 
-    async def get_price_overview(self, app_id: int, market_hash_name: str) -> Dict[str, Any]:
+    async def get_price_overview(
+        self, app_id: int, market_hash_name: str
+    ) -> dict[str, Any]:
         await self._rate_limiter.acquire()
         return await self._provider.get_price_overview(app_id, market_hash_name)
 
-    async def get_price_history(self, app_id: int, market_hash_name: str) -> List[List]:
+    async def get_price_history(self, app_id: int, market_hash_name: str) -> list[list]:
         await self._rate_limiter.acquire()
         return await self._provider.get_price_history(app_id, market_hash_name)
 
-    async def get_inventory(self, steam_id64: int, app_id: int) -> Dict[str, Any]:
+    async def get_inventory(self, steam_id64: int, app_id: int) -> dict[str, Any]:
         await self._rate_limiter.acquire()
         return await self._provider.get_inventory(steam_id64, app_id)
 

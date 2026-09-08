@@ -1,14 +1,20 @@
 import logging
-from typing import List
-from datetime import datetime, timezone, date, timedelta
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import settings
-from app.db.models import PriceAlert, ItemSnapshot, ItemDailyStats, Subscription, User, Item
-from app.services.statistics import percent_change
 from app.bot.messages import send_telegram_message
+from app.config import settings
+from app.db.models import (
+    Item,
+    ItemDailyStats,
+    ItemSnapshot,
+    PriceAlert,
+    Subscription,
+    User,
+)
+from app.services.statistics import percent_change
 
 logger = logging.getLogger(__name__)
 
@@ -27,14 +33,19 @@ async def check_price_alerts(session: AsyncSession, bot_token: str) -> None:
             continue
 
         # Определяем старую цену в зависимости от периода
-        if alert.period == '24h':
+        if alert.period == "24h":
             old_price = snapshot.price_24h_ago
         else:
-            target_date = date.today() - timedelta(days=7)
-            stmt_hist = select(ItemDailyStats.price).where(
-                ItemDailyStats.item_id == alert.item_id,
-                ItemDailyStats.date <= target_date
-            ).order_by(ItemDailyStats.date.desc()).limit(1)
+            target_date = datetime.now(tz=timezone.utc).date() - timedelta(days=7)
+            stmt_hist = (
+                select(ItemDailyStats.price)
+                .where(
+                    ItemDailyStats.item_id == alert.item_id,
+                    ItemDailyStats.date <= target_date,
+                )
+                .order_by(ItemDailyStats.date.desc())
+                .limit(1)
+            )
             hist_result = await session.execute(stmt_hist)
             old_price = hist_result.scalar_one_or_none()
 
@@ -44,7 +55,9 @@ async def check_price_alerts(session: AsyncSession, bot_token: str) -> None:
         change = percent_change(float(snapshot.median_price), float(old_price))
         if abs(change) >= float(alert.percent_change):
             # Проверяем cooldown (1 час)
-            if alert.last_triggered_at and (datetime.now(timezone.utc) - alert.last_triggered_at) < timedelta(hours=1):
+            if alert.last_triggered_at and (
+                datetime.now(timezone.utc) - alert.last_triggered_at
+            ) < timedelta(hours=1):
                 continue
 
             item = await session.get(Item, alert.item_id)
@@ -70,8 +83,7 @@ async def send_digests(session: AsyncSession, bot_token: str, frequency: str) ->
     Рассылает дайджесты с заданной периодичностью (daily/weekly).
     """
     stmt = select(Subscription).where(
-        Subscription.active == True,
-        Subscription.frequency == frequency
+        Subscription.active == True, Subscription.frequency == frequency
     )
     result = await session.execute(stmt)
     subscriptions = result.scalars().all()
@@ -82,15 +94,20 @@ async def send_digests(session: AsyncSession, bot_token: str, frequency: str) ->
             continue
 
         # Вычисляем изменение за соответствующий период
-        if frequency == 'daily':
+        if frequency == "daily":
             old_price = snapshot.price_24h_ago
             period_text = "за сутки"
         else:
-            target_date = date.today() - timedelta(days=7)
-            stmt_hist = select(ItemDailyStats.price).where(
-                ItemDailyStats.item_id == sub.item_id,
-                ItemDailyStats.date <= target_date
-            ).order_by(ItemDailyStats.date.desc()).limit(1)
+            target_date = datetime.now(tz=timezone.utc).date() - timedelta(days=7)
+            stmt_hist = (
+                select(ItemDailyStats.price)
+                .where(
+                    ItemDailyStats.item_id == sub.item_id,
+                    ItemDailyStats.date <= target_date,
+                )
+                .order_by(ItemDailyStats.date.desc())
+                .limit(1)
+            )
             hist_result = await session.execute(stmt_hist)
             old_price = hist_result.scalar_one_or_none()
             period_text = "за неделю"
@@ -105,9 +122,9 @@ async def send_digests(session: AsyncSession, bot_token: str, frequency: str) ->
         item_name = item.market_hash_name if item else "Неизвестный предмет"
 
         trend_icon = "без изменений"
-        if snapshot.trend_direction == 'up':
+        if snapshot.trend_direction == "up":
             trend_icon = "📈"
-        if snapshot.trend_direction == 'down':
+        if snapshot.trend_direction == "down":
             trend_icon = "📉"
 
         text = (

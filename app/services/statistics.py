@@ -1,4 +1,4 @@
-from datetime import date, timedelta
+from datetime import datetime, timedelta, timezone
 
 import numpy as np
 from scipy import stats
@@ -12,18 +12,19 @@ async def compute_trend(session: AsyncSession, item_id: int, window_days: int = 
     """
     Вычисляет наклон линейной регрессии и направление тренда.
     """
-    since = date.today() - timedelta(days=window_days)
+    since = datetime.now(tz=timezone.utc).date() - timedelta(days=window_days)
 
-    stmt = select(ItemDailyStats.price).where(
-        ItemDailyStats.item_id == item_id,
-        ItemDailyStats.date >= since
-    ).order_by(ItemDailyStats.date.asc())
+    stmt = (
+        select(ItemDailyStats.price)
+        .where(ItemDailyStats.item_id == item_id, ItemDailyStats.date >= since)
+        .order_by(ItemDailyStats.date.asc())
+    )
     result = await session.execute(stmt)
 
     prices = [float(row[0]) for row in result.fetchall()]
     if len(prices) < 2:
         return None, "stable"
-    
+
     x = np.arange(len(prices))
     slope, _, _, _, _ = stats.linregress(x, prices)
 

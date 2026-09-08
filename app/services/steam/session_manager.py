@@ -1,15 +1,15 @@
 import json
 import logging
 from pathlib import Path
-from typing import Optional
 
-from aiosteampy.session import SteamSession, GuardConfirmationRequired
-from aiosteampy.transport.exceptions import NetworkError
 from aiosteampy.constants import Platform
-from aiosteampy.guard.account import SteamGuardAccount, MaFile
+from aiosteampy.exceptions import SteamError
+from aiosteampy.guard.account import MaFile, SteamGuardAccount
+from aiosteampy.session import GuardConfirmationRequired, SteamSession
+from aiosteampy.transport.exceptions import NetworkError, TransportError
 
-from app.utils.retry import retry_async
 from app.config import settings
+from app.utils.retry import retry_async
 
 logger = logging.getLogger(__name__)
 
@@ -18,10 +18,10 @@ class SessionManager:
     """
     Управление жизненным циклом Steam сессии.
     """
+
     def __init__(self, redis_client=None):
         self.redis = redis_client
-        self._session: Optional[SteamSession] = None
-
+        self._session: SteamSession | None = None
 
     async def get_session(self) -> SteamSession:
         """
@@ -30,7 +30,6 @@ class SessionManager:
         if self._session is None:
             await self._restore_or_create()
         return self._session
-
 
     async def _restore_or_create(self) -> None:
         """
@@ -53,39 +52,36 @@ class SessionManager:
                             await self._session.obtain_cookies()
                             logger.info("Steam session restored and refreshed")
                             return
-                        except Exception as e:
-                            logger.warning(f"Failed to refresh restored session: {e}", exc_info=True)
+                        except (SteamError, TransportError) as e:
+                            logger.warning(f"Failed to refresh restored session: {e}")
                             await self.redis.delete("steam:session:tokens")
                             self._session = None
-                except Exception as e:
-                    logger.warning(f"Failed to restore session from Redis: {e}", exc_info=True)
+                except (SteamError, TransportError) as e:
+                    logger.warning(f"Failed to restore session from Redis: {e}")
                     self._session = None
 
         await self._create_new_session()
 
-
-    def _load_guard_account(self) -> Optional[SteamGuardAccount]:
+    def _load_guard_account(self) -> SteamGuardAccount | None:
         guard_path = Path(settings.STEAM_GUARD_FILE)
         if not guard_path.exists():
-            logger.error(f"Steam Guard file not found: {guard_path}", exc_info=True)
+            logger.exception(f"Steam Guard file not found: {guard_path}")
             return None
 
         try:
             with open(guard_path, "r", encoding="utf-8") as f:
                 mafile_data: MaFile = json.load(f)
             return SteamGuardAccount.from_mafile(mafile_data)
-        except Exception as e:
-            logger.error(f"Failed to load Steam Guard account: {e}", exc_info=True)
+        except Exception:
+            logger.exception("Failed to load Steam Guard account")
             return None
-
 
     async def _create_new_session(self) -> None:
         async def _login_flow():
             self._session = SteamSession(platform=Platform.WEB)
             try:
                 await self._session.with_credentials(
-                    settings.STEAM_USERNAME,
-                    settings.STEAM_PASSWORD
+                    settings.STEAM_USERNAME, settings.STEAM_PASSWORD
                 )
             except GuardConfirmationRequired:
                 guard_account = self._load_guard_account()
@@ -117,9 +113,8 @@ class SessionManager:
             await self.redis.setex(
                 "steam:session:tokens",
                 settings.STEAM_SESSION_TTL,
-                json.dumps(session_dump)
+                json.dumps(session_dump),
             )
-
 
     async def close(self) -> None:
         if self._session:

@@ -1,7 +1,10 @@
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
 from app.services.steam.provider import SteamProvider
 from app.services.steam.session_manager import SessionManager
+
 
 @pytest.fixture
 def provider():
@@ -16,18 +19,17 @@ def provider():
     provider._fallback_currency = 5
     return provider
 
+
 @pytest.mark.asyncio
 async def test_initialize(provider):
-    # Arrange
     provider._session_manager.get_session = AsyncMock()
     provider._session_manager.get_session.return_value = MagicMock()
-    
-    # Act
+
     await provider.initialize()
-    
-    # Assert
+
     assert provider._session is not None
     assert provider._client is not None
+
 
 @pytest.mark.asyncio
 async def test_get_price_overview_success(provider):
@@ -39,29 +41,37 @@ async def test_get_price_overview_success(provider):
     overview.median_price = 234
     overview.volume = 100
     provider._public_client.market.get_price_overview.return_value = overview
-    
+
     # Мокаем retry_async, чтобы просто выполнить функцию
-    with patch('app.services.steam.provider.retry_async', new=lambda func, *a, **k: func()):
+    with patch(
+        "app.services.steam.provider.retry_async", new=lambda func, *a, **k: func()
+    ):
         data = await provider.get_price_overview(730, "AK-47")
-    
+
     assert data["success"] is True
     assert data["lowest_price"] == "1.23"
     assert data["median_price"] == "2.34"
+
 
 @pytest.mark.asyncio
 async def test_get_price_overview_keyerror_fallback(provider):
     # Симулируем KeyError при обращении к атрибутам
     provider._public_client = MagicMock()
     provider._public_client.market.get_price_overview = AsyncMock()
-    provider._public_client.market.get_price_overview.return_value = MagicMock(spec=[])  # вызовет KeyError при обращении к lowest_price?
+    provider._public_client.market.get_price_overview.return_value = MagicMock(
+        spec=[]
+    )  # вызовет KeyError при обращении к lowest_price?
     # Вместо этого проще замокать retry_async, чтобы бросить KeyError
-    with patch('app.services.steam.provider.retry_async', side_effect=KeyError):
+    with patch("app.services.steam.provider.retry_async", side_effect=KeyError):
         # Мокаем fallback
-        provider._get_price_overview_fallback = AsyncMock(return_value={"success": True, "lowest_price": "$1.00"})
+        provider._get_price_overview_fallback = AsyncMock(
+            return_value={"success": True, "lowest_price": "$1.00"}
+        )
         data = await provider.get_price_overview(730, "AK-47")
-    
+
     assert data["success"] is True
     provider._get_price_overview_fallback.assert_called_once()
+
 
 @pytest.mark.asyncio
 async def test_get_price_history(provider):
@@ -74,18 +84,22 @@ async def test_get_price_history(provider):
     entry.price_raw = 1.23
     entry.daily_volume = 100
     provider._client.market.get_price_history.return_value = [entry]
-    
-    with patch('app.services.steam.provider.retry_async', new=lambda func, *a, **k: func()):
+
+    with patch(
+        "app.services.steam.provider.retry_async", new=lambda func, *a, **k: func()
+    ):
         history = await provider.get_price_history(730, "AK-47")
-    
+
     assert len(history) == 1
     assert history[0][1] == 1.23
+
 
 @pytest.mark.asyncio
 async def test_ensure_authenticated_valid_cookies(provider):
     provider._session = MagicMock(cookies_are_valid=True)
     result = await provider.ensure_authenticated()
     assert result is True
+
 
 @pytest.mark.asyncio
 async def test_ensure_authenticated_invalid_refresh_success(provider):
@@ -97,23 +111,34 @@ async def test_ensure_authenticated_invalid_refresh_success(provider):
     result = await provider.ensure_authenticated()
     assert result is True
 
+
 @pytest.mark.asyncio
 async def test_ensure_authenticated_refresh_fails_create_new(provider):
     provider._session = MagicMock(cookies_are_valid=False)
-    provider._session.refresh_access_token = AsyncMock(side_effect=Exception("refresh fail"))
+    provider._session.refresh_access_token = AsyncMock(
+        side_effect=Exception("refresh fail")
+    )
     provider._session_manager._create_new_session = AsyncMock()
-    provider._session_manager.get_session = AsyncMock(return_value=MagicMock(cookies_are_valid=True))
+    provider._session_manager.get_session = AsyncMock(
+        return_value=MagicMock(cookies_are_valid=True)
+    )
     result = await provider.ensure_authenticated()
     assert result is True
     provider._session_manager._create_new_session.assert_called_once()
 
+
 @pytest.mark.asyncio
 async def test_ensure_authenticated_total_failure(provider):
     provider._session = MagicMock(cookies_are_valid=False)
-    provider._session.refresh_access_token = AsyncMock(side_effect=Exception("refresh fail"))
-    provider._session_manager._create_new_session = AsyncMock(side_effect=Exception("create fail"))
+    provider._session.refresh_access_token = AsyncMock(
+        side_effect=Exception("refresh fail")
+    )
+    provider._session_manager._create_new_session = AsyncMock(
+        side_effect=Exception("create fail")
+    )
     result = await provider.ensure_authenticated()
     assert result is False
+
 
 @pytest.mark.asyncio
 async def test_get_inventory_success(provider):
@@ -126,13 +151,16 @@ async def test_get_inventory_success(provider):
     item.description.instance_id = 222
     item.description.market_hash_name = "Item A"
     provider._client.inventory.get_user_inventory.return_value.items = [item]
-    
-    with patch('app.services.steam.provider.retry_async', new=lambda func, *a, **k: func()):
+
+    with patch(
+        "app.services.steam.provider.retry_async", new=lambda func, *a, **k: func()
+    ):
         data = await provider.get_inventory(123456, 730)
-    
+
     assert data["success"] is True
     assert "rgInventory" in data
     assert data["rgDescriptions"]["111_222"]["market_hash_name"] == "Item A"
+
 
 @pytest.mark.asyncio
 async def test_get_inventory_authentication_failure(provider):
@@ -140,28 +168,32 @@ async def test_get_inventory_authentication_failure(provider):
     data = await provider.get_inventory(123456, 730)
     assert data == {"success": False}
 
+
 @pytest.mark.asyncio
 async def test_get_inventory_empty(provider):
     provider.ensure_authenticated = AsyncMock(return_value=True)
     provider._client = MagicMock()
     provider._client.inventory.get_user_inventory = AsyncMock()
     provider._client.inventory.get_user_inventory.return_value.items = []
-    
-    with patch('app.services.steam.provider.retry_async', new=lambda func, *a, **k: func()):
+
+    with patch(
+        "app.services.steam.provider.retry_async", new=lambda func, *a, **k: func()
+    ):
         data = await provider.get_inventory(123456, 730)
-    
+
     assert data["success"] is True
     assert data["rgInventory"] == {}
     assert data["rgDescriptions"] == {}
+
 
 @pytest.mark.asyncio
 async def test_close(provider):
     provider._client = AsyncMock()
     provider._public_client = AsyncMock()
     provider._session_manager = AsyncMock()
-    
+
     await provider.close()
-    
+
     provider._client.transport.close.assert_called_once()
     provider._public_client.transport.close.assert_called_once()
     provider._session_manager.close.assert_called_once()

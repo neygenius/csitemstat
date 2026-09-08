@@ -1,13 +1,15 @@
-import httpx
 import logging
-from typing import Optional
+
+import httpx
 
 from app.utils.retry import retry_async
 
 logger = logging.getLogger(__name__)
 
 
-async def send_telegram_message(bot_token: str, chat_id: int, text: str, reply_markup=None):
+async def send_telegram_message(
+    bot_token: str, chat_id: int, text: str, reply_markup=None
+):
     """
     Отправляет сообщение через Telegram Bot API
     """
@@ -30,19 +32,23 @@ async def send_telegram_message(bot_token: str, chat_id: int, text: str, reply_m
             _send,
             retries=3,
             delay=2.0,
-            exceptions=(httpx.ConnectTimeout, httpx.ReadTimeout, 
-                        httpx.RemoteProtocolError, httpx.HTTPStatusError)
+            exceptions=(
+                httpx.ConnectTimeout,
+                httpx.ReadTimeout,
+                httpx.RemoteProtocolError,
+                httpx.HTTPStatusError,
+            ),
         )
-    except Exception as e:
-        logger.error(f"Failed to send message after retries: {e}", exc_info=True)
+    except Exception:
+        logger.exception("Failed to send message after retries")
 
 
 async def send_photo(
-    bot_token: str, 
-    chat_id: int, 
-    photo_bytes: bytes, 
-    caption: Optional[str] = None,
-    reply_markup=None
+    bot_token: str,
+    chat_id: int,
+    photo_bytes: bytes,
+    caption: str | None = None,
+    reply_markup=None,
 ) -> None:
     """
     Отправляет изображение с опциональной клавиатурой.
@@ -65,7 +71,11 @@ async def send_photo(
             _send,
             retries=3,
             delay=2.0,
-            exceptions=(httpx.ConnectTimeout, httpx.ReadTimeout, httpx.RemoteProtocolError)
+            exceptions=(
+                httpx.ConnectTimeout,
+                httpx.ReadTimeout,
+                httpx.RemoteProtocolError,
+            ),
         )
-    except Exception as e:
-        logger.error(f"Failed to send photo after retries: {e}", exc_info=True)
+    except Exception:
+        logger.exception("Failed to send photo after retries")

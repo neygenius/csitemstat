@@ -1,12 +1,13 @@
 import logging
-from typing import Dict, Tuple
 
 from app.services.steam_client import SteamClient
 
 logger = logging.getLogger(__name__)
 
 
-async def fetch_grouped_inventory(steam_client: SteamClient, steam_id64: int, app_id: int) -> Dict[str, int]:
+async def fetch_grouped_inventory(
+    steam_client: SteamClient, steam_id64: int, app_id: int
+) -> dict[str, int]:
     """
     Получает инвентарь из Steam и возвращает словарь {market_hash_name: count}.
     """
@@ -14,12 +15,12 @@ async def fetch_grouped_inventory(steam_client: SteamClient, steam_id64: int, ap
     if not data.get("success"):
         logger.warning(f"Inventory not available for steam_id={steam_id64}")
         return {}
-    
+
     rg_inventory = data.get("rgInventory", {})
 
     # Собираем classid-instanceid для быстрого доступа к описаниям
     items_count = {}
-    for asset_id, asset in rg_inventory.items():
+    for asset_id, asset in rg_inventory.values():
         classid = asset.get("classid")
         instanceid = asset.get("instanceid")
         key = f"{classid}_{instanceid}"

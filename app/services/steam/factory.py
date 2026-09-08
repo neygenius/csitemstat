@@ -15,4 +15,4 @@ def create_steam_provider(redis_client=None) -> ISteamProvider:
         return SteamProvider(session_manager)
     else:
         # Fallback на cookies (его нет)
-        return 
+        return

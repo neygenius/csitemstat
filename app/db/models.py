@@ -1,8 +1,20 @@
 import datetime
 
-from sqlalchemy import Column, BigInteger, Integer, Text, Numeric, Boolean, TIMESTAMP, Date, ForeignKey, UniqueConstraint, Index
-from sqlalchemy.orm import relationship
+from sqlalchemy import (
+    TIMESTAMP,
+    BigInteger,
+    Boolean,
+    Column,
+    Date,
+    ForeignKey,
+    Index,
+    Integer,
+    Numeric,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import BYTEA
+from sqlalchemy.orm import relationship
 
 from app.db.base import Base
 
@@ -12,7 +24,10 @@ class User(Base):
     id = Column(BigInteger, primary_key=True)
     chat_id = Column(BigInteger, nullable=False)
     steam_id64 = Column(BYTEA, nullable=True)
-    created_at = Column(TIMESTAMP(timezone=True), default=lambda: datetime.datetime.now(datetime.timezone.utc))
+    created_at = Column(
+        TIMESTAMP(timezone=True),
+        default=lambda: datetime.datetime.now(datetime.timezone.utc),
+    )
 
     tracked_items = relationship("UserTrackedItem", back_populates="user")
     subscriptions = relationship("Subscription", back_populates="user")
@@ -27,7 +42,9 @@ class Item(Base):
     name = Column(Text, nullable=True)
     icon_url = Column(Text, nullable=True)
     is_tracked = Column(Boolean, default=False)
-    __table_args__ = (UniqueConstraint('app_id', 'market_hash_name', name='uq_app_market'),)
+    __table_args__ = (
+        UniqueConstraint("app_id", "market_hash_name", name="uq_app_market"),
+    )
 
     tracked_by = relationship("UserTrackedItem", back_populates="item")
     daily_stats = relationship("ItemDailyStats", back_populates="item")
@@ -39,12 +56,17 @@ class Item(Base):
 
 class UserTrackedItem(Base):
     __tablename__ = "user_tracked_items"
-    __table_args__ = (
-        Index('idx_user_tracked_items_user_id', 'user_id'),
+    __table_args__ = (Index("idx_user_tracked_items_user_id", "user_id"),)
+    user_id = Column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
     )
-    user_id = Column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
-    item_id = Column(Integer, ForeignKey("items.id", ondelete="CASCADE"), primary_key=True)
-    added_at = Column(TIMESTAMP(timezone=True), default=lambda: datetime.datetime.now(datetime.timezone.utc))
+    item_id = Column(
+        Integer, ForeignKey("items.id", ondelete="CASCADE"), primary_key=True
+    )
+    added_at = Column(
+        TIMESTAMP(timezone=True),
+        default=lambda: datetime.datetime.now(datetime.timezone.utc),
+    )
 
     user = relationship("User", back_populates="tracked_items")
     item = relationship("Item", back_populates="tracked_by")
@@ -52,12 +74,12 @@ class UserTrackedItem(Base):
 
 class ItemDailyStats(Base):
     __tablename__ = "item_daily_stats"
-    __table_args__ = (
-        Index('idx_item_daily_stats_item_date', 'item_id', 'date'),
+    __table_args__ = (Index("idx_item_daily_stats_item_date", "item_id", "date"),)
+    item_id = Column(
+        Integer, ForeignKey("items.id", ondelete="CASCADE"), primary_key=True
     )
-    item_id = Column(Integer, ForeignKey("items.id", ondelete="CASCADE"), primary_key=True)
     date = Column(Date, primary_key=True)
-    price = Column(Numeric(10,2), nullable=False)
+    price = Column(Numeric(10, 2), nullable=False)
     volume = Column(Integer, nullable=False)
 
     item = relationship("Item", back_populates="daily_stats")
@@ -65,13 +87,13 @@ class ItemDailyStats(Base):
 
 class ItemHourlyStats(Base):
     __tablename__ = "item_hourly_stats"
-    __table_args__ = (
-            Index('idx_hourly_item_timestamp', 'item_id', 'timestamp'),
-        )
-    
-    item_id = Column(Integer, ForeignKey("items.id", ondelete="CASCADE"), primary_key=True)
+    __table_args__ = (Index("idx_hourly_item_timestamp", "item_id", "timestamp"),)
+
+    item_id = Column(
+        Integer, ForeignKey("items.id", ondelete="CASCADE"), primary_key=True
+    )
     timestamp = Column(TIMESTAMP(timezone=True), primary_key=True)
-    price = Column(Numeric(10,2), nullable=False)
+    price = Column(Numeric(10, 2), nullable=False)
     volume = Column(Integer, nullable=False)
 
     item = relationship("Item", back_populates="hourly_stats")
@@ -79,15 +101,15 @@ class ItemHourlyStats(Base):
 
 class ItemSnapshot(Base):
     __tablename__ = "item_snapshot"
-    __table_args__ = (
-        Index('idx_item_snapshot_updated_at', 'updated_at'),
+    __table_args__ = (Index("idx_item_snapshot_updated_at", "updated_at"),)
+    item_id = Column(
+        Integer, ForeignKey("items.id", ondelete="CASCADE"), primary_key=True
     )
-    item_id = Column(Integer, ForeignKey("items.id", ondelete="CASCADE"), primary_key=True)
-    lowest_price = Column(Numeric(10,2), nullable=True)
-    median_price = Column(Numeric(10,2), nullable=True)
+    lowest_price = Column(Numeric(10, 2), nullable=True)
+    median_price = Column(Numeric(10, 2), nullable=True)
     volume_24h = Column(Integer, nullable=True)
-    price_24h_ago = Column(Numeric(10,2), nullable=True)
-    trend_slope = Column(Numeric(10,6), nullable=True)
+    price_24h_ago = Column(Numeric(10, 2), nullable=True)
+    trend_slope = Column(Numeric(10, 6), nullable=True)
     trend_direction = Column(Text, nullable=True)
     updated_at = Column(TIMESTAMP(timezone=True))
 
@@ -97,13 +119,22 @@ class ItemSnapshot(Base):
 class Subscription(Base):
     __tablename__ = "subscriptions"
     id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    item_id = Column(Integer, ForeignKey("items.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    item_id = Column(
+        Integer, ForeignKey("items.id", ondelete="CASCADE"), nullable=False
+    )
     frequency = Column(Text, nullable=False)
     active = Column(Boolean, default=True)
     last_sent_at = Column(TIMESTAMP(timezone=True), nullable=True)
-    created_at = Column(TIMESTAMP(timezone=True), default=lambda: datetime.datetime.now(datetime.timezone.utc))
-    __table_args__ = (UniqueConstraint('user_id', 'item_id', 'frequency', name='uq_subscription'),)
+    created_at = Column(
+        TIMESTAMP(timezone=True),
+        default=lambda: datetime.datetime.now(datetime.timezone.utc),
+    )
+    __table_args__ = (
+        UniqueConstraint("user_id", "item_id", "frequency", name="uq_subscription"),
+    )
 
     user = relationship("User", back_populates="subscriptions")
     item = relationship("Item", back_populates="subscriptions")
@@ -112,13 +143,20 @@ class Subscription(Base):
 class PriceAlert(Base):
     __tablename__ = "price_alerts"
     id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    item_id = Column(Integer, ForeignKey("items.id", ondelete="CASCADE"), nullable=False)
-    percent_change = Column(Numeric(5,2), nullable=False)
+    user_id = Column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    item_id = Column(
+        Integer, ForeignKey("items.id", ondelete="CASCADE"), nullable=False
+    )
+    percent_change = Column(Numeric(5, 2), nullable=False)
     period = Column(Text, nullable=False)
     active = Column(Boolean, default=True)
     last_triggered_at = Column(TIMESTAMP(timezone=True), nullable=True)
-    created_at = Column(TIMESTAMP(timezone=True), default=lambda: datetime.datetime.now(datetime.timezone.utc))
+    created_at = Column(
+        TIMESTAMP(timezone=True),
+        default=lambda: datetime.datetime.now(datetime.timezone.utc),
+    )
 
     user = relationship("User", back_populates="price_alerts")
     item = relationship("Item", back_populates="price_alerts")
