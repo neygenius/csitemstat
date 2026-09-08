@@ -14,9 +14,10 @@ from app.config import settings
 from app.db.base import async_session
 from app.db.models import (
     User, Item, UserTrackedItem, Subscription, PriceAlert, 
-    ItemDailyStats, ItemHourlyStats, ItemSnapshot)
+    ItemDailyStats, ItemHourlyStats, ItemSnapshot
+)
 from app.services.collector import update_single_item_snapshot
-from app.services.crypto import encrypt_steam_id, decrypt_steam_id
+from app.utils.crypto import encrypt_steam_id, decrypt_steam_id
 from app.services.inventory import fetch_grouped_inventory
 from app.services.plotter import generate_price_chart
 from app.services.statistics import percent_change
@@ -767,7 +768,7 @@ async def cb_alert_remove(callback: types.CallbackQuery):
                 await app_state.cleanup_manager.replace_message(callback.message.chat.id, 
                                                                 msg.message_id, CATEGORY_TEMP, bot)
 
-            callback.message.answer()
+            callback.answer()
         else:
             await callback.answer("Алерт не найден")
 

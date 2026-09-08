@@ -47,7 +47,7 @@ async def init_scheduler(redis_client, steam_client: SteamClient):
 
 
 async def shutdown_scheduler():
-    if state.scheduler() is not None:
+    if state.scheduler is not None:
         state.scheduler.shutdown(wait=False)
         logger.info("Scheduler stopped")
     return
