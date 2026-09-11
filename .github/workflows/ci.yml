@@ -87,3 +87,50 @@ jobs:
         name: coverage-report
         path: coverage.xml
         retention-days: 14
+
+  # Интеграционные тесты (работают с реальными БД и Redis)
+  integration-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements-dev.txt
+
+      - name: Set environment variables (необходимые для импорта settings)
+        run: |
+          echo "BOT_TOKEN=123:abc" >> $GITHUB_ENV
+          echo "WEBHOOK_SECRET=test_secret" >> $GITHUB_ENV
+          echo "WEBHOOK_URL=https://example.com" >> $GITHUB_ENV
+          echo "DB_HOST=localhost" >> $GITHUB_ENV
+          echo "DB_USER=test_user" >> $GITHUB_ENV
+          echo "DB_PASSWORD=test_pass" >> $GITHUB_ENV
+          echo "DB_NAME=test_db" >> $GITHUB_ENV
+          echo "REDIS_URL=redis://localhost:6379/0" >> $GITHUB_ENV
+          echo "STEAM_USERNAME=test_user" >> $GITHUB_ENV
+          echo "STEAM_PASSWORD=test_pass" >> $GITHUB_ENV
+          echo "STEAM_GUARD_FILE=/tmp/guard.maFile" >> $GITHUB_ENV
+          echo "FERNET_KEY=$(python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())")" >> $GITHUB_ENV
+          echo "APP_ID=730" >> $GITHUB_ENV
+
+      # testcontainers требует Docker
+      - name: Run integration tests
+        run: pytest -m integration -v --cov=app --cov-append --cov-report=term-missing --cov-report=xml
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-integration
+          path: coverage.xml
+          retention-days: 14

@@ -29,9 +29,15 @@ class User(Base):
         default=lambda: datetime.datetime.now(datetime.timezone.utc),
     )
 
-    tracked_items = relationship("UserTrackedItem", back_populates="user")
-    subscriptions = relationship("Subscription", back_populates="user")
-    price_alerts = relationship("PriceAlert", back_populates="user")
+    tracked_items = relationship(
+        "UserTrackedItem", back_populates="user", passive_deletes=True
+    )
+    subscriptions = relationship(
+        "Subscription", back_populates="user", passive_deletes=True
+    )
+    price_alerts = relationship(
+        "PriceAlert", back_populates="user", passive_deletes=True
+    )
 
 
 class Item(Base):
@@ -46,12 +52,24 @@ class Item(Base):
         UniqueConstraint("app_id", "market_hash_name", name="uq_app_market"),
     )
 
-    tracked_by = relationship("UserTrackedItem", back_populates="item")
-    daily_stats = relationship("ItemDailyStats", back_populates="item")
-    hourly_stats = relationship("ItemHourlyStats", back_populates="item")
-    snapshot = relationship("ItemSnapshot", back_populates="item", uselist=False)
-    subscriptions = relationship("Subscription", back_populates="item")
-    price_alerts = relationship("PriceAlert", back_populates="item")
+    tracked_by = relationship(
+        "UserTrackedItem", back_populates="item", passive_deletes=True
+    )
+    daily_stats = relationship(
+        "ItemDailyStats", back_populates="item", passive_deletes=True
+    )
+    hourly_stats = relationship(
+        "ItemHourlyStats", back_populates="item", passive_deletes=True
+    )
+    snapshot = relationship(
+        "ItemSnapshot", back_populates="item", uselist=False, passive_deletes=True
+    )
+    subscriptions = relationship(
+        "Subscription", back_populates="item", passive_deletes=True
+    )
+    price_alerts = relationship(
+        "PriceAlert", back_populates="item", passive_deletes=True
+    )
 
 
 class UserTrackedItem(Base):

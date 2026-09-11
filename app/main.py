@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 import redis.asyncio as redis
 from aiogram.exceptions import TelegramNetworkError
 from aiogram.types import Update, WebhookInfo
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 
 import app.bot.dispatcher as bot_module
 from app import state
@@ -97,7 +97,7 @@ app = FastAPI(lifespan=lifespan)
 async def telegram_webhook(request: Request):
     secret = request.headers.get("X-Telegram-Bot-Api-Secret-Token")
     if secret != settings.WEBHOOK_SECRET:
-        return {"error": "Forbidden"}, 403
+        raise HTTPException(status_code=403, detail="Forbidden")
     try:
         data = await request.json()
         update = Update(**data)

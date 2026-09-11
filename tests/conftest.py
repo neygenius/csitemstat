@@ -9,6 +9,8 @@ def pytest_collection_modifyitems(config, items):
         path = Path(item.fspath)
         if "unit" in path.parts:
             item.add_marker(pytest.mark.unit)
+        elif "integration" in path.parts:
+            item.add_marker(pytest.mark.integration)
 
 
 @pytest.fixture(scope="session")
