@@ -6,7 +6,7 @@ pytest-cov>=6.0
 pytest-mock>=3.14
 pytest-html>=4.1
 
-testcontainers[postgres,redis]>=4.8
+testcontainers>=4.12
 respx>=0.21
 
 ruff>=0.6

@@ -38,7 +38,7 @@ jobs:
         run: ruff format --check .
 
   # Unit-тесты (моки, без внешних сервисов)
-  test:
+  unit-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
