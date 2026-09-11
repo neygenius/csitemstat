@@ -326,15 +326,116 @@ services:
 
 ## 8. Тестирование
 
-Тестовый пакет находится в папке `tests/`. В настоящее время реализованы юнит‑тесты для:
+Проект использует многоуровневую стратегию тестирования: **unit-тесты** проверяют изолированную логику, **интеграционные тесты** — взаимодействие с реальными PostgreSQL, Redis и HTTP-эндпоинтами. Тесты разделены маркерами `unit` и `integration` и запускаются независимо.
 
-- Моделей БД (базовое создание записей).
-- Конфигурации (формирование URL).
-- Сервисов: `collector`, `inventory`, `notifier`, `plotter`, `statistics`, `steam_client`.
-- Обработчиков команд бота (`dispatcher`).
+### 8.1. Структура
 
-Используются фикстуры для изолированной БД, моки Redis и SteamProvider.  
-> **Интеграционные тесты и тесты с реальными внешними вызовами находятся в процессе разработки.**
+```
+tests/
+├── conftest.py               # маркировка тестов по пути, общие фикстуры
+├── unit/                     # unit-тесты (~190 тестов)
+│   ├── conftest.py           # моки сессии БД, Redis, Steam, Telegram
+│   ├── bot/                  # cleanup, dispatcher, keyboards, messages
+│   ├── scheduler/
+│   ├── services/             # collector, notifier, steam_client, provider, ...
+│   └── utils/
+└── integration/              # интеграционные тесты (~55 тестов)
+    ├── conftest.py           # testcontainers: PostgreSQL, Redis
+    ├── db/                   # модели, каскады, constraints, relationships
+    ├── redis/                # CleanupManager на реальном Redis
+    ├── services/             # collector, notifier, crypto
+    ├── steam/                # HTTP fallback через respx
+    ├── app/                  # FastAPI webhook, health, lifespan
+    └── bot/                  # команды с реальной БД
+```
+
+### 8.2. Unit-тесты
+
+Изолированные тесты без внешних зависимостей. Все обращения к БД, Redis, Steam и Telegram заменяются моками.
+
+- **Модели и схемы БД** — базовое создание записей, relationships, дефолты, ограничения.
+- **Конфигурация** — формирование `DATABASE_URL` / `SYNC_DATABASE_URL`, значения по умолчанию.
+- **Сервисы** — `collector`, `notifier`, `inventory`, `plotter`, `statistics`, `steam_client`, `provider`, `session_manager`, `factory`.
+- **Бот** — `cleanup`, `dispatcher` (все команды и callback-обработчики), `keyboards`, `messages`.
+- **Утилиты** — `crypto`, `retry`.
+- **Планировщик** — создание и остановка задач.
+
+Основные фикстуры (`tests/unit/conftest.py`):
+- `mock_session` — `AsyncSession` с настроенными цепочками `execute().scalars().all()`.
+- `mock_db` — патчит `get_db` для подстановки мок-сессии в хендлеры.
+- `mock_redis`, `mock_steam_provider`, `mock_steam_client`, `mock_bot`.
+- `mock_send_telegram_message` — патчит `send_telegram_message` в `notifier`.
+
+### 8.3. Интеграционные тесты
+
+Проверяют реальные транзакции, схему БД и взаимодействие с внешними системами. Для PostgreSQL и Redis поднимаются изолированные контейнеры через `testcontainers`.
+
+- **Слой данных** — каскадные удаления, `UniqueConstraint`, составные PK, NOT NULL, defaults, relationships (`selectinload`).
+- **Redis** — `CleanupManager`: регистрация, очистка, замена сообщений, изоляция категорий, устойчивость к ошибкам удаления.
+- **Сервисы с БД** — `collector` (снапшоты, история, агрегация), `notifier` (daily/weekly дайджесты, cooldown, пороги), `crypto` (круговая проверка с реальным Fernet).
+- **Steam через respx** — fallback-запрос к Steam Web API, корректность параметров, обработка 500 и `success: false`.
+- **FastAPI** — `/webhook` (403 на неверный секрет, 200 на валидный), `/health`, lifespan (инициализация и остановка ресурсов).
+- **Бот** — команды `/start`, `/track`, `/bagpack` с реальной БД.
+
+Инфраструктура (`tests/integration/conftest.py`):
+- `postgres_container`, `redis_container` — session-scope контейнеры (`testcontainers`).
+- `db_engine` — async-engine с `NullPool`, создаёт схему через `Base.metadata.create_all`.
+- `session` — function-scope сессия с TRUNCATE из `Base.metadata.sorted_tables` после каждого теста.
+- `redis_client` — реальный клиент Redis с `FLUSHDB` до и после теста.
+
+### 8.4. Запуск
+
+```bash
+# Только unit-тесты (быстро, без Docker)
+pytest -m unit
+
+# Только интеграционные (требуют Docker)
+pytest -m integration
+
+# Всё вместе
+pytest
+
+# С покрытием
+pytest -m unit --cov=app --cov-report=term-missing
+
+# Конкретный файл / тест
+pytest tests/unit/bot/test_dispatcher.py -v
+pytest tests/integration/db/test_models_cascade.py::test_delete_user_cascades
+```
+
+Конфигурация pytest (`pytest.ini`):
+- `asyncio_mode = auto`, `asyncio_default_fixture_loop_scope = session`, `asyncio_default_test_loop_scope = session` — все тесты и фикстуры используют единый event loop. Без этого пул соединений БД теряет привязку между тестами.
+- `pythonpath = .` — позволяет импортировать `app` без установки пакета.
+- Маркеры `unit`, `integration`, `e2e` зарегистрированы явно.
+- Хук `pytest_collection_modifyitems` в `tests/conftest.py` автоматически маркирует тесты по расположению (каталог `unit/` → маркер `unit` и т.д.).
+
+### 8.5. Зависимости для тестирования
+
+```
+pytest>=8.0
+pytest-asyncio>=0.24
+pytest-cov>=6.0
+pytest-mock>=3.14
+pytest-html>=4.1
+testcontainers[postgres,redis]>=4.8
+respx>=0.21
+```
+
+`testcontainers` требует запущенного Docker. В CI (GitHub Actions) Docker доступен на `ubuntu-latest` из коробки.
+
+### 8.6. CI
+
+GitHub Actions выполняет две независимые задачи:
+
+- **lint** — `ruff check` и `ruff format --check`.
+- **test** — unit-тесты с покрытием (`pytest -m unit`).
+- **integration-tests** — интеграционные тесты (`pytest -m integration`), запускаются на PR и push в `main`.
+
+Артефакт `coverage.xml` сохраняется на 14 дней для анализа.
+
+### 8.7. E2E тесты
+
+На данный момент находятся в процессе разарботки
 
 ## 9. Заключение
 
