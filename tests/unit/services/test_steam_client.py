@@ -1,6 +1,5 @@
-from unittest.mock import patch
-
 import asyncio
+from unittest.mock import patch
 
 from app.services.steam_client import RateLimiter
 
