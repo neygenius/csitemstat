@@ -56,7 +56,7 @@ class SessionManager:
                             logger.warning(f"Failed to refresh restored session: {e}")
                             await self.redis.delete("steam:session:tokens")
                             self._session = None
-                except (SteamError, TransportError) as e:
+                except (json.JSONDecodeError, SteamError, TransportError) as e:
                     logger.warning(f"Failed to restore session from Redis: {e}")
                     self._session = None
 

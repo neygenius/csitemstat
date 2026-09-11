@@ -69,24 +69,26 @@ class SteamProvider(ISteamProvider):
         if self._session and self._session.cookies_are_valid:
             logger.debug("Session cookies are valid")
             return True
-        else:
+
+        if self._session is not None:
             logger.warning("Session cookies invalid, attempting refresh...")
+            try:
+                await self._session.refresh_access_token()
+                await self._session.obtain_cookies()
+                if self._session.cookies_are_valid:
+                    logger.info("Session refreshed successfully")
+                    return True
+            except (TransportError, SteamError) as e:
+                logger.warning(f"Refresh failed: {e}, re-creating session...")
 
-        try:
-            await self._session.refresh_access_token()
-            await self._session.obtain_cookies()
-            if self._session.cookies_are_valid:
-                return True
-        except (SteamError, TransportError) as e:
-            logger.warning(f"Refresh failed: {e}, re-creating session...")
-
+        logger.info("Creating new Steam session...")
         try:
             await self._session_manager._create_new_session()
             self._session = await self._session_manager.get_session()
             self._client = SteamClient(session=self._session)
             self._public_client = SteamPublicClient(country="RU", currency=Currency.RUB)
             return True
-        except Exception:
+        except (TransportError, SteamError):
             logger.exception("Failed to ensure authentication")
             return False
 

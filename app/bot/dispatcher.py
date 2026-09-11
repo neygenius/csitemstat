@@ -173,6 +173,13 @@ async def cmd_inventory(message: types.Message):
 
     # Если нет в кэше
     steam_client = app_state.steam_client
+    if steam_client is None:
+        msg = await message.answer("Сервис сбора данных недоступен, попробуйте позже")
+        if app_state.cleanup_manager:
+            await app_state.cleanup_manager.replace_message(
+                message.chat.id, msg.message_id, CATEGORY_TEMP, bot
+            )
+        return
     try:
         raw = await fetch_grouped_inventory(steam_client, steam_id, settings.APP_ID)
     except Exception:

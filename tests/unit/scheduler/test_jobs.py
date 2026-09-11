@@ -76,3 +76,55 @@ async def test_shutdown_scheduler_without_scheduler(mocker):
 
     await shutdown_scheduler()
     # Нет планировщика - не вызывается shutdown (проверка на исключение)
+
+
+@pytest.mark.asyncio
+async def test_jobs_call_services(mocker):
+    """Проверяем, что job-функции вызывают сервисы с ожидаемыми аргументами."""
+    mock_scheduler = mocker.patch("app.scheduler.jobs.AsyncIOScheduler").return_value
+    mock_scheduler.add_job = MagicMock()
+    mock_scheduler.start = MagicMock()
+
+    mock_update = mocker.patch(
+        "app.scheduler.jobs.update_snapshots", new_callable=AsyncMock
+    )
+    mock_check = mocker.patch(
+        "app.scheduler.jobs.check_price_alerts", new_callable=AsyncMock
+    )
+    mock_daily = mocker.patch("app.scheduler.jobs.send_digests", new_callable=AsyncMock)
+    mock_history = mocker.patch(
+        "app.scheduler.jobs.sync_daily_history", new_callable=AsyncMock
+    )
+
+    mock_session_ctx = mocker.patch("app.scheduler.jobs.async_session")
+    mock_session_ctx.return_value.__aenter__ = AsyncMock(return_value=AsyncMock())
+    mock_session_ctx.return_value.__aexit__ = AsyncMock(return_value=False)
+
+    steam_client = AsyncMock()
+    await init_scheduler(AsyncMock(), steam_client)
+
+    # Достаём функции из вызовов add_job и выполняем их
+    job_funcs = [call.args[0] for call in mock_scheduler.add_job.call_args_list]
+    for func in job_funcs:
+        await func()
+
+    mock_update.assert_called_once()
+    mock_check.assert_called_once()
+    assert mock_daily.call_count == 2  # daily + weekly
+    mock_history.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_init_scheduler_stores_in_state(mocker):
+    mock_scheduler_cls = mocker.patch("app.scheduler.jobs.AsyncIOScheduler")
+    mock_scheduler = mock_scheduler_cls.return_value
+    mock_scheduler.add_job = MagicMock()
+    mock_scheduler.start = MagicMock()
+
+    from app import state
+
+    mocker.patch.object(state, "scheduler", None)
+
+    await init_scheduler(AsyncMock(), AsyncMock())
+
+    assert state.scheduler is mock_scheduler

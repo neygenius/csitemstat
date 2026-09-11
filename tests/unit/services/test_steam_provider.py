@@ -1,6 +1,9 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
+import respx
+from aiosteampy.session.exceptions import SteamError
 from aiosteampy.transport.exceptions import NetworkError
 
 from app.services.steam.provider import SteamProvider
@@ -135,7 +138,7 @@ async def test_ensure_authenticated_total_failure(provider):
         side_effect=NetworkError("refresh failed")
     )
     provider._session_manager._create_new_session = AsyncMock(
-        side_effect=Exception("create fail")
+        side_effect=SteamError("create fail")
     )
     result = await provider.ensure_authenticated()
     assert result is False
@@ -198,3 +201,121 @@ async def test_close(provider):
     provider._client.transport.close.assert_called_once()
     provider._public_client.transport.close.assert_called_once()
     provider._session_manager.close.assert_called_once()
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_price_overview_fallback_success(provider):
+    respx.get("https://steamcommunity.com/market/priceoverview/").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "success": True,
+                "lowest_price": "$1.50",
+                "median_price": "$2.00",
+                "volume": "42",
+            },
+        )
+    )
+    data = await provider._get_price_overview_fallback(730, "AK-47")
+    assert data["success"] is True
+    assert data["lowest_price"] == "$1.50"
+    assert data["volume"] == "42"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_price_overview_fallback_http_error(provider):
+    respx.get("https://steamcommunity.com/market/priceoverview/").mock(
+        return_value=httpx.Response(500)
+    )
+    data = await provider._get_price_overview_fallback(730, "AK-47")
+    assert data == {"success": False}
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_price_overview_fallback_api_failure(provider):
+    respx.get("https://steamcommunity.com/market/priceoverview/").mock(
+        return_value=httpx.Response(200, json={"success": False})
+    )
+    data = await provider._get_price_overview_fallback(730, "AK-47")
+    assert data == {"success": False}
+
+
+@pytest.mark.asyncio
+async def test_get_price_history_auth_failure(provider):
+    provider.ensure_authenticated = AsyncMock(return_value=False)
+    history = await provider.get_price_history(730, "AK-47")
+    assert history == []
+
+
+@pytest.mark.asyncio
+async def test_get_price_history_exception(provider):
+    provider.ensure_authenticated = AsyncMock(return_value=True)
+    provider._client = MagicMock()
+
+    with patch(
+        "app.services.steam.provider.retry_async",
+        side_effect=RuntimeError("network error"),
+    ):
+        history = await provider.get_price_history(730, "AK-47")
+
+    assert history == []
+
+
+@pytest.mark.asyncio
+async def test_get_inventory_item_processing_error(provider):
+    """Ошибка на одном предмете инвентаря → success=False."""
+    provider.ensure_authenticated = AsyncMock(return_value=True)
+    provider._client = MagicMock()
+
+    bad_item = MagicMock()
+    # Обращение к asset_id бросит ошибку
+    type(bad_item).asset_id = property(
+        lambda self: (_ for _ in ()).throw(RuntimeError("bad"))
+    )
+    provider._client.inventory.get_user_inventory = AsyncMock()
+    provider._client.inventory.get_user_inventory.return_value.items = [bad_item]
+
+    with patch("app.services.steam.provider.retry_async", new=lambda f, *a, **k: f()):
+        data = await provider.get_inventory(123456, 730)
+
+    assert data["success"] is False
+
+
+@pytest.mark.asyncio
+async def test_get_inventory_network_error(provider):
+    provider.ensure_authenticated = AsyncMock(return_value=True)
+    provider._client = MagicMock()
+    provider._client.inventory.get_user_inventory = AsyncMock()
+
+    with patch(
+        "app.services.steam.provider.retry_async",
+        side_effect=NetworkError("no connection"),
+    ):
+        data = await provider.get_inventory(123456, 730)
+
+    assert data["success"] is False
+
+
+@pytest.mark.asyncio
+async def test_close_when_client_is_none(provider):
+    provider._client = None
+    provider._public_client = None
+    provider._session = None
+    # Не должно бросать
+    await provider.close()
+
+
+@pytest.mark.asyncio
+async def test_ensure_authenticated_no_session(provider):
+    """Если _session = None, переходим к созданию новой."""
+    provider._session = None
+    provider._session_manager._create_new_session = AsyncMock()
+    provider._session_manager.get_session = AsyncMock(
+        return_value=MagicMock(cookies_are_valid=True)
+    )
+    result = await provider.ensure_authenticated()
+    assert result is True
+    provider._session_manager._create_new_session.assert_called_once()

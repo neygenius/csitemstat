@@ -399,6 +399,92 @@ async def test_cmd_stats_no_snapshot_success(
     mock_chart.assert_called_once()
 
 
+@pytest.mark.asyncio
+async def test_cmd_inventory_steam_unavailable(mock_db, mock_message, mock_app_state):
+    """Если app_state.steam_client is None — сообщение об ошибке."""
+    user = User(id=123456789, chat_id=123456789, steam_id64=b"enc")
+    mock_db.get = AsyncMock(return_value=user)
+    mock_app_state["redis_client"].get = AsyncMock(return_value=None)
+
+    with (
+        patch("app.bot.dispatcher.decrypt_steam_id", return_value=76561198000000000),
+        patch("app.bot.dispatcher.app_state.steam_client", None),
+    ):
+        await cmd_inventory(mock_message)
+
+    assert "Сервис сбора данных недоступен" in mock_message.answer.call_args[0][0]
+
+
+@pytest.mark.asyncio
+async def test_cmd_inventory_empty(mock_db, mock_message, mock_app_state):
+    user = User(id=123456789, chat_id=123456789, steam_id64=b"enc")
+    mock_db.get = AsyncMock(return_value=user)
+    mock_app_state["redis_client"].get = AsyncMock(return_value=None)
+
+    with (
+        patch("app.bot.dispatcher.decrypt_steam_id", return_value=76561198000000000),
+        patch(
+            "app.bot.dispatcher.fetch_grouped_inventory",
+            new_callable=AsyncMock,
+            return_value={},
+        ),
+    ):
+        await cmd_inventory(mock_message)
+
+    assert "Инвентарь пуст" in mock_message.answer.call_args[0][0]
+
+
+@pytest.mark.asyncio
+async def test_cmd_track_no_args(mock_db, mock_message, mock_app_state):
+    mock_message.text = "/track"
+    await cmd_track(mock_message)
+    assert "Использование" in mock_message.answer.call_args[0][0]
+
+
+@pytest.mark.asyncio
+async def test_cmd_track_already_tracked(mock_db, mock_message, mock_app_state):
+    mock_message.text = "/track AK-47"
+    item = Item(id=1, app_id=730, market_hash_name="AK-47")
+    mock_db.execute.return_value.scalars.return_value.all.return_value = [item]
+    user = User(id=123456789, chat_id=123456789)
+
+    async def fake_get(model, pk):
+        if model == User:
+            return user
+        if model == UserTrackedItem:
+            return UserTrackedItem(user_id=user.id, item_id=item.id)
+        return None
+
+    mock_db.get = AsyncMock(side_effect=fake_get)
+    await cmd_track(mock_message)
+    assert "уже в вашем портфеле" in mock_message.answer.call_args[0][0]
+
+
+@pytest.mark.asyncio
+async def test_cmd_stats_no_args(mock_db, mock_message, mock_app_state):
+    mock_message.text = "/stats"
+    await cmd_stats(mock_message)
+    assert "Использование" in mock_message.answer.call_args[0][0]
+
+
+@pytest.mark.asyncio
+async def test_cmd_stats_snapshot_fetch_fails(mock_db, mock_message, mock_app_state):
+    """Снапшот отсутствует, мгновенный сбор падает."""
+    mock_message.text = "/stats AK-47"
+    item = Item(id=1, app_id=730, market_hash_name="AK-47")
+    mock_db.execute.return_value.scalars.return_value.all.return_value = [item]
+    mock_db.get = AsyncMock(return_value=None)
+
+    with patch(
+        "app.bot.dispatcher.update_single_item_snapshot",
+        new_callable=AsyncMock,
+        return_value=False,
+    ):
+        await cmd_stats(mock_message)
+
+    assert "Не удалось получить данные" in mock_message.answer.call_args[0][0]
+
+
 # -----------------------------------------------------------------------------
 # Тесты callback-обработчиков
 # -----------------------------------------------------------------------------
@@ -660,6 +746,101 @@ async def test_cb_tracked_untrack(
     mock_callback_query.message.answer.assert_called_once()
 
 
+@pytest.mark.asyncio
+async def test_cb_sub_add_existing_subscription_reactivates(
+    mock_db, mock_callback_query, mock_app_state
+):
+    mock_callback_query.data = "sub_add:1:daily"
+    user = User(id=123456789, chat_id=123456789)
+    item = Item(id=1, app_id=730, market_hash_name="AK-47")
+    existing_sub = Subscription(
+        id=42, user_id=user.id, item_id=item.id, frequency="daily", active=False
+    )
+
+    async def fake_get(model, pk):
+        if model == User:
+            return user
+        if model == Item:
+            return item
+        return None
+
+    mock_db.get = AsyncMock(side_effect=fake_get)
+    mock_db.execute.return_value.scalar_one_or_none.return_value = existing_sub
+
+    await cb_sub_add(mock_callback_query)
+
+    assert existing_sub.active is True
+    mock_callback_query.answer.assert_called()
+
+
+@pytest.mark.asyncio
+async def test_process_alert_percent_negative(mock_message, mock_state, mock_app_state):
+    mock_message.text = "-5"
+    await process_alert_percent(mock_message, mock_state)
+    assert "Неверный процент" in mock_message.answer.call_args[0][0]
+
+
+@pytest.mark.asyncio
+async def test_process_alert_percent_with_symbol(
+    mock_message, mock_state, mock_app_state
+):
+    mock_message.text = "15%"
+    await process_alert_percent(mock_message, mock_state)
+    mock_state.update_data.assert_called_once_with(percent=15.0)
+
+
+@pytest.mark.asyncio
+async def test_cb_alert_period_missing_data(
+    mock_callback_query, mock_state, mock_app_state
+):
+    mock_callback_query.data = "alert_period:24h"
+    mock_state.get_data = AsyncMock(return_value={})  # нет item_id/percent
+
+    await cb_alert_period(mock_callback_query, mock_state)
+    mock_callback_query.answer.assert_called_with("Ошибка: данные утеряны")
+    mock_state.clear.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_cb_sub_remove_not_found(mock_db, mock_callback_query, mock_app_state):
+    mock_callback_query.data = "sub_remove:999"
+    mock_db.get = AsyncMock(return_value=None)
+    await cb_sub_remove(mock_callback_query)
+    mock_callback_query.answer.assert_called_with("Подписка не найдена")
+
+
+@pytest.mark.asyncio
+async def test_cb_alert_remove_not_found(mock_db, mock_callback_query, mock_app_state):
+    mock_callback_query.data = "alert_remove:999"
+    mock_db.get = AsyncMock(return_value=None)
+    await cb_alert_remove(mock_callback_query)
+    mock_callback_query.answer.assert_called_with("Алерт не найден")
+
+
+@pytest.mark.asyncio
+async def test_cb_tracked_untrack_not_tracked(
+    mock_db, mock_callback_query, mock_app_state
+):
+    mock_callback_query.data = "tracked_untrack:1"
+    user = User(id=123456789, chat_id=123456789)
+
+    async def fake_get(model, pk):
+        if model == User:
+            return user
+        return None
+
+    mock_db.get = AsyncMock(side_effect=fake_get)
+    await cb_tracked_untrack(mock_callback_query)
+    mock_callback_query.answer.assert_called_with("Этот предмет не отслеживается")
+
+
+@pytest.mark.asyncio
+async def test_cb_tracked_item_invalid_id(mock_db, mock_callback_query, mock_app_state):
+    mock_callback_query.data = "tracked_item:abc"
+    with pytest.raises(ValueError):
+        await cb_tracked_item(mock_callback_query)
+
+
 # -----------------------------------------------------------------------------
 # Тесты для команд-заглушек
 # -----------------------------------------------------------------------------
@@ -831,3 +1012,52 @@ async def test_send_price_chart_no_records(mock_db, mock_bot, mock_app_state):
         await send_price_chart(chat_id=123456789, item_id=1, days=7)
     mock_bot.send_photo.assert_not_called()
     mock_gen.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_send_price_chart_item_not_found(mock_db, mock_bot, mock_app_state):
+    mock_app_state["redis_client"].get = AsyncMock(return_value=None)
+    mock_db.get = AsyncMock(return_value=None)
+
+    with patch("app.bot.dispatcher.bot", mock_bot):
+        await send_price_chart(chat_id=1, item_id=999, days=30)
+
+    mock_bot.send_photo.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_send_price_chart_redis_cache_error(mock_db, mock_bot, mock_app_state):
+    """Ошибка при setex не должна ломать отправку графика."""
+    from redis.exceptions import RedisError
+
+    mock_app_state["redis_client"].get = AsyncMock(return_value=None)
+    mock_app_state["redis_client"].setex = AsyncMock(side_effect=RedisError("boom"))
+
+    item = Item(id=1, app_id=730, market_hash_name="AK-47")
+    mock_db.get = AsyncMock(return_value=item)
+    stat = ItemHourlyStats(
+        item_id=1, timestamp=datetime.now(timezone.utc), price=10.0, volume=100
+    )
+    mock_db.execute.return_value.scalars.return_value.all.return_value = [stat]
+
+    with (
+        patch("app.bot.dispatcher.generate_price_chart", return_value=b"png"),
+        patch("app.bot.dispatcher.bot", mock_bot),
+    ):
+        await send_price_chart(chat_id=1, item_id=1, days=7)
+
+    mock_bot.send_photo.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_send_price_chart_send_error_logged(mock_db, mock_bot, mock_app_state):
+    """Ошибка Telegram при send_photo не должна ронять хендлер."""
+    mock_app_state["redis_client"].get = AsyncMock(return_value=b"cached")
+    mock_bot.send_photo = AsyncMock(side_effect=RuntimeError("Telegram down"))
+
+    item = Item(id=1, app_id=730, market_hash_name="AK-47")
+    mock_db.get = AsyncMock(return_value=item)
+
+    with patch("app.bot.dispatcher.bot", mock_bot):
+        # Не должно бросить
+        await send_price_chart(chat_id=1, item_id=1, days=30)
