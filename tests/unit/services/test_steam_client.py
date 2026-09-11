@@ -1,5 +1,7 @@
 from unittest.mock import patch
 
+import asyncio
+
 from app.services.steam_client import RateLimiter
 
 
@@ -27,6 +29,20 @@ class TestRateLimiter:
         # sleep не вызывается, а токен используется
         mock_sleep.assert_not_called()
         assert limiter.tokens == 0
+
+    async def test_concurrent_acquire_serialized_by_lock(self):
+        """Параллельные вызовы не должны приводить к превышению лимита."""
+        limiter = RateLimiter(rate=3, period=60.0)
+        sleep_calls = []
+
+        async def fake_sleep(s):
+            sleep_calls.append(s)
+
+        with patch("asyncio.sleep", side_effect=fake_sleep):
+            await asyncio.gather(*(limiter.acquire() for _ in range(6)))
+
+        # Из 6 вызовов минимум 3 должны были "поспать"
+        assert len(sleep_calls) >= 3
 
 
 class TestSteamClient:
