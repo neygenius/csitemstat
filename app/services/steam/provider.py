@@ -25,7 +25,7 @@ class SteamProvider(ISteamProvider):
         self._session_manager = session_manager
         self._session: SteamSession | None = None
         self._client: SteamClient | None = None
-        self._public_client = SteamPublicClient(country="RU", currency=Currency.RUB)
+        self._public_client: SteamPublicClient | None = None
         self._fallback_country = "RU"
         self._fallback_currency = 5
 

@@ -6,7 +6,7 @@ from aiogram.types import Chat, Message
 from aiogram.types import User as TGUser
 from sqlalchemy import select
 
-from app.bot.dispatcher import cmd_portfolio, cmd_start, cmd_track
+from app.bot.dispatcher import cmd_inventory, cmd_portfolio, cmd_start, cmd_track
 from app.db.models import Item, User, UserTrackedItem
 
 
@@ -129,3 +129,30 @@ async def test_cmd_portfolio_empty(patch_db, session):
     await cmd_portfolio(msg)
 
     assert "портфель пуст" in msg.answer.call_args[0][0]
+
+
+async def test_steam_client_survives_multiple_commands(patch_db, session):
+    """Глобальный SteamClient не должен закрываться в хендлере."""
+    session.add(User(id=1, chat_id=1, steam_id64=b"enc"))
+    await session.commit()
+
+    fake_client = AsyncMock()
+    fake_client.close = AsyncMock()
+
+    with (
+        patch("app.bot.dispatcher.app_state.steam_client", fake_client),
+        patch("app.bot.dispatcher.decrypt_steam_id", return_value=76561198000000000),
+        patch(
+            "app.bot.dispatcher.fetch_grouped_inventory",
+            new_callable=AsyncMock,
+            return_value={},
+        ),
+    ):
+        msg1 = make_message(1, "/inventory")
+        await cmd_inventory(msg1)
+
+        msg2 = make_message(1, "/inventory")
+        await cmd_inventory(msg2)
+
+    # Клиент не должен быть закрыт в хендлере
+    fake_client.close.assert_not_awaited()

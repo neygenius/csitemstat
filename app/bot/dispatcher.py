@@ -189,9 +189,7 @@ async def cmd_inventory(message: types.Message):
             await app_state.cleanup_manager.replace_message(
                 message.chat.id, msg.message_id, CATEGORY_TEMP, bot
             )
-        await steam_client.close()
         return
-    await steam_client.close()
 
     if not raw:
         msg = await message.answer("Инвентарь пуст или скрыт")
