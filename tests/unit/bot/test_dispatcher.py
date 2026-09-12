@@ -267,7 +267,7 @@ async def test_cmd_inventory_fetch_error(
         await cmd_inventory(mock_message)
     # Должно быть сообщение об ошибке
     assert "Не удалось загрузить" in mock_message.answer.call_args[0][0]
-    mock_app_state["steam_client"].close.assert_called_once()
+    mock_app_state["steam_client"].close.assert_not_called()
 
 
 @pytest.mark.asyncio
